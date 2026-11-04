@@ -886,7 +886,7 @@ function showHint(text) {
   hintWin.setBounds({ x: Math.round(workArea.x + (workArea.width - width) / 2), y: workArea.y + workArea.height - height - 40, width, height })
   const esc = (s) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
   const html = `<!doctype html><meta charset="utf-8"><body style="margin:0;background:transparent;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden">
-    <div style="padding:10px 22px;border-radius:999px;background:rgba(32,33,36,.92);color:#fff;font:16px 'Segoe UI','Microsoft YaHei UI',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.18)">${esc(text)}</div></body>`
+    <div style="padding:10px 22px;border-radius:999px;background:rgba(28,32,51,.92);color:#fff;font:16px 'Segoe UI','Microsoft YaHei UI',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.18)">${esc(text)}</div></body>`
   hintWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).then(() => hintWin?.showInactive()).catch(() => {})
   clearTimeout(hintTimer)
   hintTimer = setTimeout(() => { if (hintWin && !hintWin.isDestroyed()) hintWin.hide() }, 2600)
