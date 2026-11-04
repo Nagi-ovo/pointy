@@ -125,7 +125,8 @@ async function launchPet(logger) {
   }
   logger.info(`pointy: starting Pointy: ${exe} ${PET_APP_DIR}`)
   // The DSH host runs Electron in node mode; the pet must not inherit that.
-  const env = { ...process.env, POINTY_MANAGED: '1' }
+  // POINTY_HOST_PID：拉起它的 DSH 插件宿主；宿主没了、插件又没连着，Pointy 就自己退
+  const env = { ...process.env, POINTY_MANAGED: '1', POINTY_HOST_PID: String(process.pid) }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.NODE_OPTIONS
   try {

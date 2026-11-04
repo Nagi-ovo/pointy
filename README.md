@@ -18,6 +18,8 @@ dsh plugin --profile desktop add @pointylab/dsh
 
 用 web 版 DSH 的把 `desktop` 换成 `web`。
 
+想装 GitHub 上的最新版（比 npm 上的新），把包名换成 `github:pointylab/pointy#release`。同一个插件只用一种装法，换装法前先卸载。
+
 装完**重新打开 DSH**。第一次启用时插件会下载 Pointy 用的运行时（Electron，下载约 150 MB、解压后约 370 MB，国内走 npmmirror 镜像，按官方 SHA-256 校验），放在 `%USERPROFILE%\.pointy\runtime`，只下一次。下完托盘里出现鲸鱼图标，右下角弹出使用说明。之后 Pointy 随 DSH 启动、随 DSH 退出。
 
 ### 浏览器扩展（推荐）
