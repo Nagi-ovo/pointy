@@ -1,0 +1,11 @@
+node_modules/
+backup/
+*.log
+dist/
+promo/out/
+promo/shots/**/*.mp4
+promo/shots/**/*.mp3
+plugin/pet/
+plugin/README.md
+plugin/LICENSE
+plugin/ASSETS.md

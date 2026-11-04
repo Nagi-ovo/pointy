@@ -1,0 +1,20 @@
+{
+  "name": "pointy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shake the mouse, point at anything on screen and ask DeepSeek Harness about it",
+  "license": "MIT",
+  "main": "app/main.js",
+  "scripts": {
+    "start": "electron .",
+    "fake": "node tools/fake-plugin.mjs"
+  },
+  "dependencies": {
+    "koffi": "^2.16.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "resedit": "^3.1.0"
+  }
+}

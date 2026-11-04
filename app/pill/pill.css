@@ -1,0 +1,73 @@
+/* 收起的任务：右下角托盘上方一叠胶囊。颜色和卡片同一套 */
+:root {
+  --bg: #ffffff;
+  --text: #1f2328;
+  --muted: #6e7781;
+  --faint: #9aa1aa;
+  --chip: #f2f3f5;
+  --blue: #4d6bfe;
+  --blue-soft: #eef2ff;
+  --ok: #2da44e;
+  --ok-soft: #e3f3e8;
+  --error: #cf222e;
+  --error-soft: #fde8ea;
+  --shadow: 0 3px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(15, 23, 42, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #23252a;
+    --text: #e6e8eb;
+    --muted: #a0a7b1;
+    --faint: #7c838d;
+    --chip: #2f3237;
+    --blue: #6b84ff;
+    --blue-soft: #2a3150;
+    --ok: #3fb950;
+    --ok-soft: #1f3a2a;
+    --error: #ff7b72;
+    --error-soft: #4a2326;
+    --shadow: 0 3px 12px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  }
+}
+
+html, body {
+  margin: 0;
+  background: transparent;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  user-select: none;
+}
+/* 右对齐往上叠；四周留出阴影的位置 */
+#list { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding: 12px 14px 10px; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 34px; max-width: 100%; padding: 0 6px 0 6px;
+  border-radius: 17px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  animation: in 160ms ease-out;
+}
+.pill.out { animation: out 140ms ease-in forwards; pointer-events: none; }
+@keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes out { to { opacity: 0; transform: translateX(12px); } }
+
+.pill img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; object-position: 50% 12%; background: var(--blue-soft); image-rendering: pixelated; }
+.pill .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.pill.run .dot { background: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+.pill.done .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.pill.error .dot { background: var(--error); box-shadow: 0 0 0 3px var(--error-soft); }
+.pill .title { min-width: 0; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill.run .title { color: var(--muted); }
+.pill:hover .title { color: var(--text); }
+/* × 只是不看了，不打断 DSH */
+.pill .x {
+  flex: none; width: 22px; height: 22px; margin-left: -2px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%; background: transparent; color: var(--faint);
+  font: inherit; font-size: 14px; cursor: pointer;
+}
+.pill .x:hover { background: var(--chip); color: var(--text); }

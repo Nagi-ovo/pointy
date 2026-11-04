@@ -1,0 +1,13 @@
+# @pointylab/dsh bundle layer. The node half talks to the pet over a loopback
+# WebSocket; the browser half (lib/client.js, found through package.json's
+# dsh.client) asks the node half which session to open over a private RPC
+# channel, which needs Connection to hold the web server.
+- id: connection
+  name: '@deepseek-ai/dsh-client-connection'
+  inject: [webStartup, webServer]
+  config:
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+- insert:
+    - id: pointy
+      name: '@pointylab/dsh'

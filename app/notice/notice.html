@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <style>
+    :root { --bg: #fff; --text: #1f2328; --muted: #6e7781; --line: #e6e8eb; --chip: #f2f3f5; --chip-hover: #e8eaed; --blue: #4d6bfe; --blue-hover: #3f5ce8;
+      --shadow: 0 3px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(15, 23, 42, 0.05); }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #23252a; --text: #e6e8eb; --muted: #a0a7b1; --line: #34373d; --chip: #2f3237; --chip-hover: #3a3d43; --blue: #6b84ff; --blue-hover: #8096ff;
+        --shadow: 0 3px 12px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.06); }
+    }
+    [hidden] { display: none !important; }
+    html, body { margin: 0; background: transparent; overflow: hidden; font: 14px "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif; color: var(--text); }
+    #box { margin: 14px; padding: 14px 16px 12px; background: var(--bg); border-radius: 12px; box-shadow: var(--shadow); position: relative; }
+    h1 { font-size: 15px; margin: 0 22px 8px 0; font-weight: 600; }
+    p { margin: 0 0 6px; line-height: 1.55; color: var(--muted); }
+    p b { color: var(--text); font-weight: 600; }
+    #x { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; font-size: 15px; }
+    #x:hover { background: var(--chip); }
+    #buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+    button.b { border: 0; border-radius: 8px; padding: 6px 14px; font: inherit; cursor: pointer; background: var(--chip); color: var(--text); }
+    button.b:hover { background: var(--chip-hover); }
+    button.b.primary { background: var(--blue); color: #fff; }
+    button.b.primary:hover { background: var(--blue-hover); }
+  </style>
+</head>
+<body>
+  <div id="box">
+    <button id="x" title="关闭">✕</button>
+    <h1 id="title"></h1>
+    <div id="body"></div>
+    <div id="buttons"></div>
+  </div>
+  <script src="notice.js"></script>
+</body>
+</html>
