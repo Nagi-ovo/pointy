@@ -417,6 +417,9 @@ function openMenu() {
 function fitMenu() {
   const r = $('target').getBoundingClientRect()
   menu.style.left = `${r.left - 6}px`
+  // 「插入到哪」在输入框下面：上面放得下就往上开，放不下再往下开、临时撑高窗口
+  const h = menu.getBoundingClientRect().height
+  if (r.top - h - 4 >= 0) { menu.style.top = `${r.top - h - 4}px`; return }
   menu.style.top = `${r.bottom + 4}px`
   const need = Math.ceil(menu.getBoundingClientRect().bottom + 12)
   if (need <= window.innerHeight) return
@@ -683,10 +686,20 @@ function addAfterLinks() {
   after.className = 'after'
   const copy = Object.assign(document.createElement('button'), { type: 'button', textContent: '复制' })
   copy.addEventListener('click', () => { window.card.copy(allText); copy.textContent = '已复制' })
-  const open = Object.assign(document.createElement('button'), { type: 'button', textContent: '在 DSH 里看' })
+  const open = Object.assign(document.createElement('button'), { type: 'button', textContent: '在 DSH 里继续' })
   open.addEventListener('click', openInDsh)
   after.append(copy, document.createTextNode(' · '), open)
   thread.append(after)
+}
+
+/** 卡片顶上那一行：从哪指过来的。网页写域名，普通程序写窗口标题或程序名 */
+function describeSource(g) {
+  let host = ''
+  try { host = g.url ? new URL(g.url).hostname.replace(/^www\./, '') : '' } catch {}
+  const app = String(g.source?.app ?? '').replace(/\.exe$/i, '')
+  if (host) return `来自 ${host}`
+  const title = String(g.source?.title ?? '').trim()
+  return title ? `来自 ${title}` : app ? `来自 ${app}` : ''
 }
 
 // ---------- 等待时的状态：把工具调用说成人话 ----------
@@ -737,6 +750,7 @@ window.card.onInit((data) => {
   const g = data.grab
   // "按网站记住"的网站：浏览器里是域名，普通程序是程序名
   try { siteKey = g.url ? new URL(g.url).hostname : (g.source?.app ?? '') } catch { siteKey = g.source?.app ?? '' }
+  $('source').textContent = describeSource(g)
   element = g.element
   selection = (element?.fields?.正文 || g.text || '').trim()
   if (element && !KEEP_AS_IS.has(element.kind)) selection = cleanText(selection)
