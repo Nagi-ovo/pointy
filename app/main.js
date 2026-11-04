@@ -994,18 +994,49 @@ function installedVersion() {
   return app.getVersion()
 }
 
-/** 装了新版本（升级、重装）：右下角弹几秒，让用户知道 Pointy 起来了；第一次装弹完整说明 */
-function greetOnStart() {
-  if (!settings.welcomed) return showWelcome()
-  const version = installedVersion()
-  if (settings.welcomedVersion === version) return
-  saveSettings({ welcomedVersion: version })
-  return showNotice({
-    title: `Pointy 已就位 · ${version}`,
-    body: ['**晃一下鼠标**试试。托盘鲸鱼图标的菜单里有「使用说明」。'],
-    buttons: [],
-    timeoutMs: 6000,
+/**
+ * 屏幕正中的开场动画（app/intro/）：鲸鱼光标晃几下，指认光环套住"晃一下鼠标，指哪问哪"。
+ * 全屏透明、点击穿透、不抢焦点，放完自己关。返回放完的 Promise。
+ */
+function showIntro(version) {
+  return new Promise((resolve) => {
+    const { bounds } = screen.getPrimaryDisplay()
+    const w = new BrowserWindow({
+      ...bounds, show: false, frame: false, transparent: true, resizable: false, focusable: false, skipTaskbar: true,
+      hasShadow: false, alwaysOnTop: true, backgroundColor: '#00000000',
+      webPreferences: { preload: path.join(__dirname, 'intro', 'preload.js'), contextIsolation: true },
+    })
+    w.setIgnoreMouseEvents(true)
+    w.setAlwaysOnTop(true, 'screen-saver')
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      ipcMain.removeListener('intro-done', onDone)
+      if (!w.isDestroyed()) w.close()
+      resolve()
+    }
+    const onDone = (e) => { if (!w.isDestroyed() && e.sender === w.webContents) finish() }
+    ipcMain.on('intro-done', onDone)
+    w.on('closed', finish)
+    setTimeout(finish, 8000)
+    w.loadFile(path.join(__dirname, 'intro', 'intro.html'))
+    w.webContents.once('did-finish-load', () => {
+      w.webContents.send('intro-init', { version })
+      if (TEST_HIDDEN) { w.setPosition(-20000, -20000); w.showInactive() } else w.showInactive()
+    })
   })
+}
+
+/** 装好（第一次）或换了版本后第一次启动：放开场动画；第一次装接着弹完整说明。全屏、勿扰时不放 */
+async function greetOnStart() {
+  const version = installedVersion()
+  if (settings.welcomed && settings.welcomedVersion === version) return
+  if (fullscreen || settings.dnd) return
+  const first = !settings.welcomed
+  saveSettings({ welcomedVersion: version })
+  await showIntro(version)
+  if (first) await showWelcome()
 }
 
 /** 第一次运行：告诉用户怎么用，顺便推荐装扩展 */
@@ -1260,12 +1291,13 @@ app.whenReady().then(() => {
       level: () => settings.shakeLevel,
     })
   }
+  if (MANAGED) setInterval(quitIfOrphaned, 5000)
   if (!TEST_HIDDEN) setTimeout(() => Promise.resolve(greetOnStart()).catch((err) => logError('welcome', err)), 2500)
   pollFullscreen()
   setInterval(pollFullscreen, FULLSCREEN_POLL_MS)
   setInterval(() => { try { keepOnTop() } catch {} }, TOPMOST_POLL_MS)
   setInterval(updateClickThrough, CLICK_POLL_MS)
-  if (TEST_HIDDEN || process.env.POINTY_TEST_HOOKS === '1') global.pointyTest = { openCard, openDsh, dshUi: () => dshUi, showNotice, showWelcome, greetOnStart, showExtensionGuide, noticeChoose: (id) => noticeDone?.(id), noticeOpen: () => !!noticeWin, extensionGrabFor, onShake, getCard: () => card, petBounds: () => win.getBounds(), allCards: () => [...cards], lastGrab: () => lastGrab, selection: require('./selection'), pickAndOpen, pickNative, extensionCount: () => extensions.size, lastPickTab: () => lastPickTab, abortPick: () => picking?.abort?.(), setOffscreenCards: (on) => { offscreenCards = on }, pills: () => pills.map(({ win, ...p }) => p), pillBounds: () => pillWin?.getBounds() }
+  if (TEST_HIDDEN || process.env.POINTY_TEST_HOOKS === '1') global.pointyTest = { openCard, openDsh, dshUi: () => dshUi, showNotice, showWelcome, greetOnStart, showIntro, showExtensionGuide, noticeChoose: (id) => noticeDone?.(id), noticeOpen: () => !!noticeWin, extensionGrabFor, onShake, getCard: () => card, petBounds: () => win.getBounds(), allCards: () => [...cards], lastGrab: () => lastGrab, selection: require('./selection'), pickAndOpen, pickNative, extensionCount: () => extensions.size, lastPickTab: () => lastPickTab, abortPick: () => picking?.abort?.(), setOffscreenCards: (on) => { offscreenCards = on }, pills: () => pills.map(({ win, ...p }) => p), pillBounds: () => pillWin?.getBounds() }
 })
 app.on('window-all-closed', () => {})
 app.on('will-quit', () => {
@@ -1274,6 +1306,18 @@ app.on('will-quit', () => {
   stopSelectionHelper()
   if (MANAGED && (!TEST_HIDDEN || process.env.POINTY_TEST_UNINSTALL === '1') && pluginUninstalled()) cleanUpAfterUninstall()
 })
+
+/**
+ * 插件拉起Pointy后、还没连上，DSH 就退了（比如刚装完重开 DSH 那几秒），Pointy会一直挂着、显示 DSH 未连接。
+ * 拉起它的宿主进程没了、插件也没连着，就退出；下次 DSH 启动会再拉起。
+ */
+function quitIfOrphaned() {
+  const host = Number(process.env.POINTY_HOST_PID)
+  if (plugin || !Number.isInteger(host) || host <= 0) return
+  try { process.kill(host, 0) } catch (err) {
+    if (err.code === 'ESRCH') { logError('orphan', `DSH host ${host} is gone and no plugin is connected; quitting`); app.quit() }
+  }
+}
 
 // ---------- 插件被卸载后清理自己 ----------
 // Pointy 从插件目录里的 pet/ 运行。DSH 卸载插件时（pnpm remove）删掉了包根目录的 package.json、src、lib，
