@@ -686,9 +686,10 @@ function addAfterLinks() {
   after.className = 'after'
   const copy = Object.assign(document.createElement('button'), { type: 'button', textContent: '复制' })
   copy.addEventListener('click', () => { window.card.copy(allText); copy.textContent = '已复制' })
-  const open = Object.assign(document.createElement('button'), { type: 'button', textContent: '在 DSH 里继续' })
+  const open = Object.assign(document.createElement('button'), { type: 'button' })
+  open.innerHTML = '<svg viewBox="0 0 16 16"><path d="M6 3h7v7M13 3 4 12"/></svg>在 DSH 里继续'
   open.addEventListener('click', openInDsh)
-  after.append(copy, document.createTextNode(' · '), open)
+  after.append(open, copy)
   thread.append(after)
 }
 

@@ -128,7 +128,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #source { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); font-size: 12.5px; }
 #open-dsh { display: none !important; }
 /* 输入框下面单独一行：插到哪个对话 */
-#target-row { display: flex; align-items: center; gap: 4px; margin: 6px 0 0 -6px; min-width: 0; }
+#target-row { display: flex; align-items: center; gap: 4px; margin: 8px 0 0; min-width: 0; }
 
 #target-wrap { -webkit-app-region: no-drag; position: relative; min-width: 0; }
 #target {
@@ -146,8 +146,9 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #target-meta { flex: none; white-space: nowrap; color: var(--faint); }
 #target-meta.running { color: #2da44e; }
 #target svg { flex: none; width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; }
+#target, #model { box-shadow: inset 0 0 0 1px var(--line); border-radius: 7px; padding: 3px 8px; }
 #target:hover { background: var(--chip); }
-#target:disabled { cursor: default; background: transparent; }
+#target:disabled { cursor: default; background: transparent; box-shadow: none; }
 #target:disabled svg { display: none; }
 
 /* 发送目标下拉：最近 5 个会话 + 新任务 */
@@ -250,9 +251,11 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .reply th { color: var(--muted); font-weight: 600; }
 .reply blockquote { margin: 4px 0; padding: 0 0 0 10px; border-left: 2px solid var(--quote); color: var(--muted); }
 .reply a { color: inherit; text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; cursor: pointer; word-break: break-all; }
-.after { margin: -4px 0 8px; font-size: 12.5px; color: var(--faint); }
-.after button { border: none; background: none; padding: 0; color: var(--faint); cursor: pointer; }
-.after button:hover { color: var(--text); }
+.after { display: flex; gap: 6px; margin: -2px 0 10px; }
+.after button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: none; border-radius: 7px; background: none;
+  box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font-size: 12.5px; cursor: pointer; }
+.after button:hover { background: var(--chip); color: var(--text); }
+.after button svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 #activity { margin: 2px 0 6px; font-size: 12.5px; color: var(--faint); }
 #activity.error { color: var(--error); }
 
@@ -296,9 +299,9 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #suggest .skeleton + .skeleton { width: 70px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
-#bar { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+#bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 /* 模型：和发送目标一样的小下拉，菜单往上开；文字和上面左对齐 */
-#model-wrap { position: relative; min-width: 0; margin-left: -6px; }
+#model-wrap { position: relative; min-width: 0; }
 #model {
   display: inline-flex; align-items: center; gap: 4px;
   max-width: 220px;
@@ -309,7 +312,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #model-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #model svg { flex: none; width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; }
 #model:hover { background: var(--chip); color: var(--text); }
-#model:disabled { cursor: default; background: transparent; }
+#model:disabled { cursor: default; background: transparent; box-shadow: none; }
 #model:disabled svg { display: none; }
 #model-menu {
   position: absolute; left: -6px; bottom: 32px; z-index: 10;
@@ -361,7 +364,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 }
 #send:not(:disabled):hover { filter: brightness(1.06); }
 #send:not(:disabled):active { transform: scale(0.94); }
-#send:disabled { background: var(--chip-hover); color: var(--faint); cursor: default; }
+#send:disabled { background: var(--blue-soft); color: var(--blue-line); cursor: default; }
 #send svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- 配对 ---------- */
