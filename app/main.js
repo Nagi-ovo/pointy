@@ -988,9 +988,29 @@ async function showExtensionGuide() {
   if (choice === 'copy') clipboard.writeText('chrome://extensions')
 }
 
+/** 插件的版本号（开发版没有插件包，用 app 自己的） */
+function installedVersion() {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')).version } catch {}
+  return app.getVersion()
+}
+
+/** 装了新版本（升级、重装）：右下角弹几秒，让用户知道 Pointy 起来了；第一次装弹完整说明 */
+function greetOnStart() {
+  if (!settings.welcomed) return showWelcome()
+  const version = installedVersion()
+  if (settings.welcomedVersion === version) return
+  saveSettings({ welcomedVersion: version })
+  return showNotice({
+    title: `Pointy 已就位 · ${version}`,
+    body: ['**晃一下鼠标**试试。托盘鲸鱼图标的菜单里有「使用说明」。'],
+    buttons: [],
+    timeoutMs: 6000,
+  })
+}
+
 /** 第一次运行：告诉用户怎么用，顺便推荐装扩展 */
 async function showWelcome() {
-  saveSettings({ welcomed: true })
+  saveSettings({ welcomed: true, welcomedVersion: installedVersion() })
   const choice = await showNotice({
     title: 'Pointy 已就位',
     body: [
@@ -1043,6 +1063,7 @@ function updateTray() {
       ? { label: `浏览器扩展已连接（${extensions.size}）`, enabled: false }
       : { label: '安装浏览器扩展（推荐）…', click: () => showExtensionGuide() },
     { type: 'separator' },
+    { label: '使用说明…', click: () => showWelcome() },
     { label: '勿扰模式', type: 'checkbox', checked: settings.dnd, click: (item) => { saveSettings({ dnd: item.checked }); applyVisibility() } },
     { type: 'separator' },
     { label: '退出 Pointy', click: () => app.quit() },
@@ -1062,6 +1083,7 @@ function petMenu() {
     { label: `浏览器扩展：${extensions.size ? `已连接 ${extensions.size} 个` : '未连接'}`, enabled: false },
     { label: '安装浏览器扩展…', click: () => showExtensionGuide() },
     { type: 'separator' },
+    { label: '使用说明…', click: () => showWelcome() },
     { label: '勿扰模式', type: 'checkbox', checked: settings.dnd, click: (item) => { saveSettings({ dnd: item.checked }); applyVisibility() } },
     { label: '置顶', type: 'checkbox', checked: settings.onTop, click: (item) => { saveSettings({ onTop: item.checked }); applyOnTop(); updateTray() } },
     {
@@ -1238,12 +1260,12 @@ app.whenReady().then(() => {
       level: () => settings.shakeLevel,
     })
   }
-  if (!TEST_HIDDEN && !settings.welcomed) setTimeout(() => showWelcome().catch((err) => logError('welcome', err)), 2500)
+  if (!TEST_HIDDEN) setTimeout(() => Promise.resolve(greetOnStart()).catch((err) => logError('welcome', err)), 2500)
   pollFullscreen()
   setInterval(pollFullscreen, FULLSCREEN_POLL_MS)
   setInterval(() => { try { keepOnTop() } catch {} }, TOPMOST_POLL_MS)
   setInterval(updateClickThrough, CLICK_POLL_MS)
-  if (TEST_HIDDEN || process.env.POINTY_TEST_HOOKS === '1') global.pointyTest = { openCard, openDsh, dshUi: () => dshUi, showNotice, showWelcome, showExtensionGuide, noticeChoose: (id) => noticeDone?.(id), noticeOpen: () => !!noticeWin, extensionGrabFor, onShake, getCard: () => card, petBounds: () => win.getBounds(), allCards: () => [...cards], lastGrab: () => lastGrab, selection: require('./selection'), pickAndOpen, pickNative, extensionCount: () => extensions.size, lastPickTab: () => lastPickTab, abortPick: () => picking?.abort?.(), setOffscreenCards: (on) => { offscreenCards = on }, pills: () => pills.map(({ win, ...p }) => p), pillBounds: () => pillWin?.getBounds() }
+  if (TEST_HIDDEN || process.env.POINTY_TEST_HOOKS === '1') global.pointyTest = { openCard, openDsh, dshUi: () => dshUi, showNotice, showWelcome, greetOnStart, showExtensionGuide, noticeChoose: (id) => noticeDone?.(id), noticeOpen: () => !!noticeWin, extensionGrabFor, onShake, getCard: () => card, petBounds: () => win.getBounds(), allCards: () => [...cards], lastGrab: () => lastGrab, selection: require('./selection'), pickAndOpen, pickNative, extensionCount: () => extensions.size, lastPickTab: () => lastPickTab, abortPick: () => picking?.abort?.(), setOffscreenCards: (on) => { offscreenCards = on }, pills: () => pills.map(({ win, ...p }) => p), pillBounds: () => pillWin?.getBounds() }
 })
 app.on('window-all-closed', () => {})
 app.on('will-quit', () => {

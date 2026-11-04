@@ -15,6 +15,7 @@ function paragraph(text) {
 }
 
 window.notice.onInit((data) => {
+  $('buttons').hidden = !data.buttons?.length
   $('title').textContent = data.title ?? ''
   $('body').replaceChildren(...(data.body ?? []).map(paragraph))
   $('buttons').replaceChildren(...(data.buttons ?? []).map((b) => {
@@ -24,7 +25,8 @@ window.notice.onInit((data) => {
     el.addEventListener('click', () => window.notice.choose(b.id))
     return el
   }))
-  requestAnimationFrame(() => window.notice.resize(Math.ceil(document.documentElement.scrollHeight)))
+  // 量卡片本身（加上下各 14px 边距）：量整页的话，内容比窗口矮时量出来的是窗口高度，缩不回去
+  requestAnimationFrame(() => window.notice.resize(Math.ceil($('box').getBoundingClientRect().height) + 28))
 })
 
 $('x').addEventListener('click', () => window.notice.choose(null))
