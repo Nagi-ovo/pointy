@@ -1,6 +1,6 @@
 {
   "name": "@pointylab/dsh",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Pointy for DeepSeek Harness: shake the mouse, point at anything on screen and ask DSH about it",
   "license": "MIT",
   "keywords": ["dsh-plugin", "deepseek-harness", "pointy"],

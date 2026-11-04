@@ -11,7 +11,8 @@ const { startShakeDetector } = require('./shake')
 const { pickNative, restoreCursor } = require('./uipick')
 
 const PORT = Number(process.env.POINTY_PORT) || 47321
-const TOKEN_DIR = path.join(os.homedir(), '.pointy')
+// POINTY_HOME 只给测试用（卸载清理的测试不能碰真的 ~/.pointy）
+const TOKEN_DIR = process.env.POINTY_HOME || path.join(os.homedir(), '.pointy')
 const TOKEN_FILE = path.join(TOKEN_DIR, 'token')
 const SETTINGS_FILE = path.join(TOKEN_DIR, 'settings.json')
 // 旧版插件按它拉起Pointy；现在插件自带Pointy，这个文件启动时删掉
@@ -1249,4 +1250,35 @@ app.on('will-quit', () => {
   restoreCursor()
   globalShortcut.unregisterAll()
   stopSelectionHelper()
+  if (MANAGED && (!TEST_HIDDEN || process.env.POINTY_TEST_UNINSTALL === '1') && pluginUninstalled()) cleanUpAfterUninstall()
 })
+
+// ---------- 插件被卸载后清理自己 ----------
+// Pointy 从插件目录里的 pet/ 运行。DSH 卸载插件时（pnpm remove）删掉了包根目录的 package.json、src、lib，
+// pet/ 因为 Pointy 还开着、koffi.node 被占着删不干净。等 DSH 退出、Pointy 跟着退出时，看到包已经没了，
+// 就把运行时、设置和插件残留一起删掉。DSH 没开时用命令行卸载的话 Pointy 不在运行，这条路走不到。
+const PLUGIN_ROOT = path.resolve(__dirname, '..', '..')
+
+function pluginUninstalled() {
+  // 只在确实是从 node_modules/@pointylab/dsh 里跑的时候才判断，开发版不碰
+  if (!/[\\/]node_modules[\\/]@pointylab[\\/]dsh$/i.test(PLUGIN_ROOT)) return false
+  return !fs.existsSync(path.join(PLUGIN_ROOT, 'package.json'))
+}
+
+function cleanUpAfterUninstall() {
+  const targets = [TOKEN_DIR, app.getPath('userData'), PLUGIN_ROOT].filter((p) => fs.existsSync(p))
+  logError('uninstall', `plugin removed; cleaning ${targets.join(', ')}`)
+  // Pointy 和它的子进程退干净（exe 和 koffi.node 解锁）后再删；最多等 30 秒
+  const quote = (p) => `'${p.replace(/'/g, "''")}'`
+  const script = [
+    `$exe = ${quote(process.execPath)}`,
+    '$t0 = Get-Date',
+    'while ((Get-Process | Where-Object { $_.Path -eq $exe }) -and ((Get-Date) - $t0).TotalSeconds -lt 30) { Start-Sleep -Milliseconds 500 }',
+    ...targets.map((p) => `Remove-Item -LiteralPath ${quote(p)} -Recurse -Force -ErrorAction SilentlyContinue`),
+  ].join('\n')
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  try {
+    // 经 cmd 的 start 起：直接 spawn 的控制台子进程会跟着 Pointy 退出被关掉（实测），start 出来的那个能活下来
+    require('node:child_process').spawn('cmd.exe', ['/d', '/c', 'start', '""', '/min', 'powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+  } catch (err) { logError('uninstall', err) }
+}

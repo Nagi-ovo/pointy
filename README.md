@@ -44,7 +44,7 @@ DSH「插件管理」里删掉 @pointylab/dsh，或者：
 dsh plugin --profile desktop remove @pointylab/dsh
 ```
 
-再删掉 `%USERPROFILE%\.pointy` 文件夹（运行时、设置、和扩展的配对信息都在里面）。
+卸载后关掉 DSH，Pointy 退出时会把自己的运行时、设置和扩展配对信息（`%USERPROFILE%\.pointy`、`%APPDATA%\pointy`）一起删掉。如果是在 DSH 没开的时候用命令行卸载的，Pointy 没机会清理，这两个文件夹要手动删。
 
 ---
 
