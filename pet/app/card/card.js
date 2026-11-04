@@ -684,8 +684,15 @@ const openInDsh = () => window.card.openDsh(sessionId ?? (targetValue !== 'new' 
 function addAfterLinks() {
   const after = document.createElement('div')
   after.className = 'after'
-  const copy = Object.assign(document.createElement('button'), { type: 'button', textContent: '复制' })
-  copy.addEventListener('click', () => { window.card.copy(allText); copy.textContent = '已复制' })
+  const COPY_ICON = '<svg viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>'
+  const copy = Object.assign(document.createElement('button'), { type: 'button', className: 'copy', title: '复制回答' })
+  copy.innerHTML = COPY_ICON
+  copy.addEventListener('click', () => {
+    window.card.copy(allText)
+    copy.innerHTML = '<svg viewBox="0 0 16 16"><path d="M3.5 8.5 6.5 11.5 12.5 4.5"/></svg>'
+    copy.title = '已复制'
+    setTimeout(() => { copy.innerHTML = COPY_ICON; copy.title = '复制回答' }, 1500)
+  })
   const open = Object.assign(document.createElement('button'), { type: 'button' })
   open.innerHTML = '<svg viewBox="0 0 16 16"><path d="M6 3h7v7M13 3 4 12"/></svg>在 DSH 里继续'
   open.addEventListener('click', openInDsh)
