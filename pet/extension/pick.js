@@ -225,8 +225,8 @@
   const EASE = '170ms cubic-bezier(0.34, 1.2, 0.64, 1)'
   Object.assign(box.style, {
     position: 'fixed', left: '0', top: '0', zIndex: 2147483647, pointerEvents: 'none', boxSizing: 'border-box',
-    border: '1.5px solid rgba(138, 180, 248, 0.95)', background: 'rgba(138, 180, 248, 0.08)', borderRadius: '8px',
-    boxShadow: '0 0 0 3px rgba(138, 180, 248, 0.16), 0 0 16px 4px rgba(138, 180, 248, 0.28)',
+    border: '1.5px solid rgba(77, 107, 254, 0.95)', background: 'rgba(77, 107, 254, 0.08)', borderRadius: '8px',
+    boxShadow: '0 0 0 3px rgba(77, 107, 254, 0.16), 0 0 16px 4px rgba(77, 107, 254, 0.28)',
     opacity: '0', willChange: 'transform, width, height',
     transition: `transform ${EASE}, width ${EASE}, height ${EASE}, opacity 120ms ease-out`,
   })
@@ -235,7 +235,7 @@
   label.attachShadow({ mode: 'open' }).innerHTML = `
     <style>
       .pill { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 22px; border-radius: 999px;
-        background: rgba(32, 33, 36, 0.92); color: #fff; font: 16px "Segoe UI", "Microsoft YaHei UI", sans-serif; white-space: nowrap;
+        background: rgba(28, 32, 51, 0.92); color: #fff; font: 16px "Segoe UI", "Microsoft YaHei UI", sans-serif; white-space: nowrap;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); pointer-events: none; }
       kbd { font: inherit; font-size: 14px; padding: 1px 9px; border: 1px solid rgba(255, 255, 255, 0.45); border-radius: 7px; }
       .pill svg { width: 15px; height: 20px; }

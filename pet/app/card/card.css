@@ -124,6 +124,11 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .spacer { flex: 1; }
 /* 状态圈不显示了（看板娘表情和收起后的胶囊已经说明状态），只留着给脚本记状态 */
 #status { display: none; }
+/* 顶上只写从哪指过来的；去 DSH 改成回答下面的「在 DSH 里继续」 */
+#source { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); font-size: 12.5px; }
+#open-dsh { display: none !important; }
+/* 输入框下面单独一行：插到哪个对话 */
+#target-row { display: flex; align-items: center; gap: 4px; margin: 6px 0 0 -6px; min-width: 0; }
 
 #target-wrap { -webkit-app-region: no-drag; position: relative; min-width: 0; }
 #target {
@@ -291,7 +296,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #suggest .skeleton + .skeleton { width: 70px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
-#bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+#bar { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 /* 模型：和发送目标一样的小下拉，菜单往上开；文字和上面左对齐 */
 #model-wrap { position: relative; min-width: 0; margin-left: -6px; }
 #model {
