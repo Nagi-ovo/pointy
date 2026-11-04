@@ -1,0 +1,11 @@
+{
+  "name": "pointy",
+  "private": true,
+  "main": "boot.js",
+  "pointy": {
+    "electron": {
+      "version": "44.10.1",
+      "sha256": "5099bdc11c6a78edff35851491c1f8228a1c2e844e1b376eee219402c42c6011"
+    }
+  }
+}

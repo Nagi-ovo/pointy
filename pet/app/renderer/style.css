@@ -1,0 +1,157 @@
+[hidden] { display: none !important; }
+
+:root {
+  --scale: 0.6;
+  --cw: calc(200px * var(--scale));
+  --ch: calc(240px * var(--scale));
+  --bg: #ffffff;
+  --text: #1f2328;
+  --muted: #6e7781;
+  --line: #e6e8eb;
+  --chip: #f2f3f5;
+  --accent: #1f2328;
+  --accent-text: #ffffff;
+  --error: #cf222e;
+  --shadow: 0 6px 24px rgba(15, 23, 42, 0.14), 0 1px 4px rgba(15, 23, 42, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #23252a;
+    --text: #e6e8eb;
+    --muted: #a0a7b1;
+    --line: #34373d;
+    --chip: #2f3237;
+    --accent: #e6e8eb;
+    --accent-text: #1f2328;
+    --error: #ff7b72;
+    --shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 1px 4px rgba(0, 0, 0, 0.3);
+  }
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  font-family: "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* 人物大小由主进程定（--scale），人物在窗口底部正中 */
+#character {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  margin-left: calc(var(--cw) / -2);
+  width: var(--cw);
+  height: var(--ch);
+  cursor: grab;
+}
+#character img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+#character.offline img { filter: grayscale(1) opacity(0.7); }
+#character.hop { animation: hop 0.35s ease-out; }
+#character.shake { animation: shake 0.5s ease-in-out 2; }
+#character.drop-hover { filter: drop-shadow(0 0 10px #ffcc33); }
+
+@keyframes hop {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(calc(-18px * var(--scale))); }
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* 气泡：跟卡片一个风格，宽度随字走，最宽 260 再换行；在头顶正中，小尾巴朝下指着头顶。
+   只有快出屏幕时才横移 --shift，尾巴反向挪回去，仍然指着人物 */
+#bubble {
+  position: absolute;
+  bottom: calc(var(--ch) + 10px);
+  left: 50%;
+  transform: translateX(calc(-50% + var(--shift, 0px)));
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 260px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: var(--shadow);
+}
+#bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: clamp(12px, calc(50% - 5px - var(--shift, 0px)), calc(100% - 22px));
+  width: 10px;
+  height: 10px;
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+#bubble.error #bubble-text { color: var(--error); }
+#bubble.clickable { cursor: pointer; }
+
+#bubble-text {
+  max-height: 84px;
+  overflow: auto;
+}
+
+#bubble-detail {
+  margin-top: 6px;
+  max-height: 44px;
+  overflow: auto;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--muted);
+  user-select: text;
+}
+
+#bubble-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+#bubble-actions button {
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--chip);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+#bubble-actions #btn-allow { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+#bubble-actions button:hover { filter: brightness(0.94); }
+
+#badge {
+  position: absolute;
+  left: calc(50% + var(--cw) * 0.28);
+  bottom: calc(var(--ch) * 0.86);
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+}
