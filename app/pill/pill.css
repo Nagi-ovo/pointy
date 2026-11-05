@@ -1,5 +1,6 @@
 /* 收起的任务：右下角托盘上方一叠胶囊。颜色和卡片同一套 */
 :root {
+  color-scheme: light dark;
   --bg: #ffffff;
   --text: #1f2328;
   --muted: #6e7781;

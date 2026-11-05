@@ -1,6 +1,8 @@
 [hidden] { display: none !important; }
 
 :root {
+  /* 让滚动条、输入框这些原生控件跟着下面的 prefers-color-scheme 一起明暗 */
+  color-scheme: light dark;
   --bg: #ffffff;
   --text: #1f2328;
   --muted: #6e7781;

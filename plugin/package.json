@@ -1,6 +1,6 @@
 {
   "name": "@pointylab/dsh",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "description": "Pointy for DeepSeek Harness: shake the mouse, point at anything on screen and ask DSH about it",
   "icon": "./icon.png",
   "license": "MIT",
