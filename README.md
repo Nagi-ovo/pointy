@@ -111,7 +111,7 @@ dsh plugin --profile desktop add github:pointylab/pointy#release
 
 用 web 版 DSH 的，把 `desktop` 换成 `web`。
 
-**首次启用**：装完重新打开 DSH。插件会下载一次 Pointy 用的运行时（Electron，下载约 150 MB、解压后约 370 MB；国内走 npmmirror 镜像，按官方 SHA-256 校验），放在 `%USERPROFILE%\.pointy\runtime`。下载完成后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
+**首次启用**：装完重启 DSH。插件会下载一次 Pointy 用的运行时（约 150 MB）在 `%USERPROFILE%\.pointy\runtime`。下载完成后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
 
 <p align="center">
   <picture>
