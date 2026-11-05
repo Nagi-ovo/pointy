@@ -1,16 +1,14 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="media/hero-dark.png">
-    <img src="media/hero-light.png" alt="Pointy：晃一下鼠标，指哪问哪" width="100%">
-  </picture>
-</p>
+<div align="center">
 
-<p align="center">
-  DeepSeek Harness（DSH）插件。晃一下鼠标，指住屏幕上的任何内容，直接问 DSH。<br>
-  指到的内容自动带上，回答在原地的小卡片里流出来，不用切窗口，也不用复制粘贴。
-</p>
+<img src="media/logo.png" alt="Pointy 的头像：扒着鼠标箭头的像素鲸鱼娘" width="160">
 
-<p align="center">
+# Pointy
+
+**DeepSeek Harness 插件：晃一下鼠标，指住屏幕上的任何内容，直接问 DSH。**
+
+指到的内容自动带上，回答在原地的小卡片里流出来，不用切窗口，也不用复制粘贴。
+
+<p>
   <img alt="内测中" src="https://img.shields.io/badge/%E7%8A%B6%E6%80%81-%E5%86%85%E6%B5%8B%E4%B8%AD-E8A33D?style=flat-square&labelColor=1C2033">
   <img alt="Windows 10/11 x64" src="https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-4D6BFE?style=flat-square&logo=windows&logoColor=white&labelColor=1C2033">
   <img alt="macOS 开发中" src="https://img.shields.io/badge/macOS-%E5%BC%80%E5%8F%91%E4%B8%AD-8A90A6?style=flat-square&logo=apple&logoColor=white&labelColor=1C2033">
@@ -18,6 +16,17 @@
   <a href="LICENSE"><img alt="许可证 MIT" src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-4D6BFE?style=flat-square&labelColor=1C2033"></a>
   <a href="https://github.com/pointylab/pointy/stargazers"><img alt="GitHub Star 数" src="https://img.shields.io/github/stars/pointylab/pointy?style=flat-square&logo=github&label=Star&color=4D6BFE&labelColor=1C2033"></a>
 </p>
+
+[安装](#安装说明) · [三种界面](#三种界面) · [浏览器扩展](#浏览器扩展) · [隐私](#隐私) · [许可](#许可)
+
+<br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="media/hero-dark.png">
+  <img src="media/hero-light.png" alt="Pointy：晃一下鼠标，指哪问哪" width="100%">
+</picture>
+
+</div>
 
 <p align="center">在 DSH 里打开「插件」→「添加插件」，填入下面这一行，点「安装」，装完重新打开 DSH。</p>
 
@@ -29,6 +38,7 @@ github:pointylab/pointy#release
 
 <br>
 
+<a id="三种界面"></a>
 <h3 align="center">三种界面，都能指</h3>
 
 <p align="center">晃一下鼠标进入指认，框住你要问的那一块，点一下，卡片就弹在旁边。</p>
@@ -71,6 +81,7 @@ github:pointylab/pointy#release
 
 <br>
 
+<a id="浏览器扩展"></a>
 <h3 align="center">浏览器扩展：网页里看得更全</h3>
 
 <p align="center">装上 Pointy 的浏览器扩展（Chrome、Edge），在网页里能指到具体的一段、一条评论、一张图，<br>DSH 收到的也不只是正文：网址、页面、作者、时间、链接一起带上。还多一个右键「问 Pointy」。</p>
@@ -112,6 +123,8 @@ dsh plugin --profile desktop add github:pointylab/pointy#release
 **浏览器扩展**：托盘鲸鱼图标 →「安装浏览器扩展（推荐）…」，按弹出的卡片操作。扩展加载后会自动连接 Pointy，屏幕右下角会询问是否允许，点「允许」即可。
 
 **托盘菜单**：调整晃动灵敏度、开关勿扰模式、安装浏览器扩展、退出。
+
+<a id="隐私"></a>
 
 ## 隐私
 
@@ -179,6 +192,8 @@ node tools/pack-plugin.mjs
 - `npm run fake`：不启动 DSH，模拟插件推送一遍状态。
 
 </details>
+
+<a id="许可"></a>
 
 ## 许可
 
