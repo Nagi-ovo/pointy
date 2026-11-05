@@ -176,7 +176,7 @@ async function onPickResult(msg, sender) {
   ws.send(JSON.stringify({ type: 'picked', reqId, url: tab.url, pageTitle: tab.title, browser: BROWSER, element: r, image }))
 }
 
-// web 版 DSH：Pointy 卡片上点"在 DSH 中打开"时，把开着它的标签页切到前面
+// Pointy 要把某个网页版 agent（比如 web 版 DSH）叫到前台时，把开着它的标签页切到前面
 async function focusTab(origin) {
   if (typeof origin !== 'string' || !/^https?:\/\/[^/]+$/.test(origin)) return
   const tabs = await chrome.tabs.query({})

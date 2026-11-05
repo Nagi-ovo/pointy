@@ -2,10 +2,10 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('card', {
   onInit: (fn) => ipcRenderer.on('card-init', (_e, data) => fn(data)),
-  onDsh: (fn) => ipcRenderer.on('dsh', (_e, msg) => fn(msg)),
-  send: (msg) => ipcRenderer.invoke('card-to-plugin', msg),
+  onAgent: (fn) => ipcRenderer.on('agent', (_e, msg) => fn(msg)),
+  send: (msg) => ipcRenderer.invoke('card-to-agent', msg),
   close: () => ipcRenderer.send('card-close'),
-  openDsh: (sessionId) => ipcRenderer.send('card-open-dsh', sessionId),
+  openAgent: (sessionId) => ipcRenderer.send('card-open-agent', sessionId),
   copy: (text) => ipcRenderer.send('card-copy', text),
   resize: (height) => ipcRenderer.send('card-resize', height),
   menuRoom: (height) => ipcRenderer.send('card-menu-room', height),

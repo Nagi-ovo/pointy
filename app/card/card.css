@@ -124,9 +124,13 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .spacer { flex: 1; }
 /* 状态圈不显示了（看板娘表情和收起后的胶囊已经说明状态），只留着给脚本记状态 */
 #status { display: none; }
-/* 顶上只写从哪指过来的；去 DSH 改成回答下面的「在 DSH 里继续」 */
+/* 顶上只写从哪指过来的；去 agent 那边改成回答下面的「在 XX 里继续」 */
+/* 问过之后：对话标题在最前，来源跟在后面，地方不够先挤来源 */
+#title { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text); font-size: 14px; font-weight: 600; }
+#title:not([hidden]) + #source { flex: 0 100 auto; }
+#title:not([hidden]) + #source::before { content: '· '; }
 #source { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); font-size: 12.5px; }
-#open-dsh { display: none !important; }
+#open-agent { display: none !important; }
 /* 输入框下面单独一行：插到哪个对话 */
 #target-row { display: flex; align-items: center; gap: 4px; margin: 8px 0 0 -6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); min-width: 0; }
 
@@ -147,7 +151,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #target-meta.running { color: #2da44e; }
 #target svg { flex: none; width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; }
 #target:hover { background: var(--chip); }
-#target:disabled { cursor: default; background: transparent; }
+#target:disabled { cursor: default; background: transparent; color: var(--faint); }
 #target:disabled svg { display: none; }
 
 /* 发送目标下拉：最近 5 个会话 + 新任务 */
@@ -301,6 +305,9 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 #bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+/* 问过之后发到哪已经定了，那一行不要了；分隔线挪到模型这行上面 */
+#card.asked #target-row { display: none; }
+#card.asked #bar { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
 /* 模型：和发送目标一样的小下拉，菜单往上开；文字和上面左对齐 */
 #model-wrap { position: relative; min-width: 0; margin-left: -6px; }
 #model {
@@ -324,7 +331,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
   border: 1px solid var(--line);
 }
 .group { padding: 6px 8px 2px; color: var(--faint); font-size: 11.5px; }
-/* 模型菜单底下的思考强度：一行分段按钮，样子同快答/深入 */
+/* 模型菜单底下的思考强度：一行分段按钮，样子同快答/完整 */
 .effort-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px 2px 8px; }
 .effort-label { flex: none; color: var(--faint); font-size: 12px; }
 .effort-seg { display: inline-flex; flex-wrap: wrap; padding: 2px; border-radius: 8px; background: var(--chip); }
@@ -332,7 +339,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .effort-seg button:hover { color: var(--text); }
 .effort-seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12); }
 
-/* 快答 / 深入：小号分段开关，选中的那格浮起来 */
+/* 快答 / 完整：小号分段开关，选中的那格浮起来 */
 #mode { flex: none; display: inline-flex; padding: 2px; border-radius: 8px; background: var(--chip); }
 #mode button {
   padding: 2px 9px; border: none; border-radius: 6px; background: transparent;

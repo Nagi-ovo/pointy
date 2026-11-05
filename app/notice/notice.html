@@ -23,6 +23,12 @@
     button.b:hover { background: var(--chip-hover); }
     button.b.primary { background: var(--blue); color: #fff; }
     button.b.primary:hover { background: var(--blue-hover); }
+    .copies { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+    button.copy { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px 4px 10px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+    button.copy:hover { background: var(--chip); }
+    button.copy code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12.5px Consolas, "Cascadia Mono", monospace; }
+    button.copy .tag { flex: none; padding: 1px 8px; border-radius: 6px; background: var(--chip); color: var(--muted); font-size: 12px; }
+    button.copy.done .tag { background: var(--blue); color: #fff; }
   </style>
 </head>
 <body>

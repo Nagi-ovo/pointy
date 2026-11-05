@@ -1,5 +1,6 @@
-// 小提示窗：一个标题、几段话、几个按钮。点了哪个按钮（或关掉）告诉 main.js。
+// 小提示窗：一个标题、几段话、几个按钮。点了哪个按钮（或关掉）告诉主进程。
 // 段落里只认 **粗体**，其余按纯文本放进去。
+// 段落也可以是 { text, copy: [值, …] }：段落下面一行可复制的值，点了只复制、窗口不关
 const $ = (id) => document.getElementById(id)
 
 function paragraph(text) {
@@ -14,10 +15,35 @@ function paragraph(text) {
   return p
 }
 
+function copyRow(values) {
+  const row = document.createElement('div')
+  row.className = 'copies'
+  for (const value of values) {
+    const chip = document.createElement('button')
+    chip.type = 'button'
+    chip.className = 'copy'
+    chip.title = '复制'
+    const code = Object.assign(document.createElement('code'), { textContent: value })
+    const tag = Object.assign(document.createElement('span'), { className: 'tag', textContent: '复制' })
+    chip.append(code, tag)
+    chip.addEventListener('click', () => {
+      window.notice.copy(value)
+      tag.textContent = '已复制'
+      chip.classList.add('done')
+      clearTimeout(chip.timer)
+      chip.timer = setTimeout(() => { tag.textContent = '复制'; chip.classList.remove('done') }, 1500)
+    })
+    row.append(chip)
+  }
+  return row
+}
+
+const item = (it) => (typeof it === 'object' && it ? [paragraph(it.text ?? ''), copyRow(it.copy ?? [])] : [paragraph(it)])
+
 window.notice.onInit((data) => {
   $('buttons').hidden = !data.buttons?.length
   $('title').textContent = data.title ?? ''
-  $('body').replaceChildren(...(data.body ?? []).map(paragraph))
+  $('body').replaceChildren(...(data.body ?? []).flatMap(item))
   $('buttons').replaceChildren(...(data.buttons ?? []).map((b) => {
     const el = document.createElement('button')
     el.className = b.primary ? 'b primary' : 'b'

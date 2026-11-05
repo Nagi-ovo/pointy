@@ -5,7 +5,7 @@ const { BrowserWindow, desktopCapturer, globalShortcut, screen } = require('elec
 const koffi = require('koffi')
 const path = require('node:path')
 const { uiaRequest } = require('./selection')
-const { foregroundAddress, setOwner } = require('./fullscreen')
+const { foregroundAddress, setOwner } = require('../core/win32')
 
 const user32 = koffi.load('user32.dll')
 const GetAsyncKeyState = user32.func('int16 __stdcall GetAsyncKeyState(int key)')
@@ -69,7 +69,7 @@ let cursorSwapped = false
 function swapCursor(scaleFactor) {
   const want = 32 * scaleFactor
   const size = CURSOR_SIZES.reduce((best, s) => (Math.abs(s - want) < Math.abs(best - want) ? s : best))
-  const file = path.join(__dirname, '..', 'assets', 'cursor', `cursor-${size}.cur`)
+  const file = path.join(__dirname, '..', '..', 'assets', 'cursor', `cursor-${size}.cur`)
   try {
     // SetSystemCursor 会接管并销毁传进去的句柄，所以每种光标单独加载一份
     for (const id of SWAPPED_CURSORS) {
