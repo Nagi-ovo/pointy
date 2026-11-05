@@ -75,7 +75,10 @@ fs.writeFileSync(path.join(pet, 'package.json'), JSON.stringify({
 }, null, 2) + '\n')
 
 // npm 页面显示的是包里的 README；LICENSE 也一起带上
-for (const f of ['README.md', 'LICENSE', 'ASSETS.md']) fs.copyFileSync(path.join(root, f), path.join(plugin, f))
+for (const f of ['LICENSE', 'ASSETS.md']) fs.copyFileSync(path.join(root, f), path.join(plugin, f))
+// README 里的图是仓库根目录 media/ 的相对路径，包里没有 media/，换成 GitHub 上的地址
+const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8').replace(/(["(])media\//g, '$1https://raw.githubusercontent.com/pointylab/pointy/main/media/')
+fs.writeFileSync(path.join(plugin, 'README.md'), readme)
 
 const dist = path.join(root, 'dist')
 fs.mkdirSync(dist, { recursive: true })
