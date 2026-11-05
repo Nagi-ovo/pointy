@@ -1,4 +1,4 @@
-// 主进程给整份列表，这里照着画；点胶囊去 DSH 看，× 不看了
+// 主进程给整份列表，这里照着画；点胶囊放回卡片，× 不看了
 const list = document.getElementById('list')
 const rows = new Map() // id -> element
 
@@ -29,7 +29,7 @@ window.pill.onList((items) => {
     if (!el) { el = row(p); rows.set(p.id, el); list.append(el) }
     el.className = `pill ${p.state}`
     el.querySelector('.title').textContent = p.title
-    el.title = { run: '在后台做：', done: '做完了：', error: '出错了：' }[p.state] + p.title + '\n点一下到 DSH 里看'
+    el.title = { run: '在后台做：', done: '做完了：', error: '出错了：' }[p.state] + p.title + '\n点一下放回卡片'
   }
   fit()
 })

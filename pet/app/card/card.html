@@ -13,9 +13,10 @@
   </div>
   <div id="card">
     <header id="drag">
+      <span id="title" hidden></span>
       <span id="source"></span>
       <span class="spacer"></span>
-      <button id="open-dsh" class="icon" type="button" title="在 DSH 中打开" hidden>
+      <button id="open-agent" class="icon" type="button" hidden>
         <svg viewBox="0 0 16 16"><path d="M6 3h7v7M13 3 4 12"/></svg>
       </button>
       <button id="close" class="icon" type="button" title="关闭（Esc）">
@@ -49,7 +50,7 @@
         </div>
         <div id="mode" role="radiogroup" aria-label="回答方式">
           <button type="button" data-mode="quick" title="快答：直接简短回答，不跑命令、不下载，最多搜一两次网页">快答</button>
-          <button type="button" data-mode="deep" title="深入：不加限制，DSH 该查就查、该跑就跑">深入</button>
+          <button type="button" data-mode="deep" title="完整：不加限制，该查就查、该跑就跑">完整</button>
         </div>
         <span class="spacer"></span>
         <button id="send" type="button" title="发送（Enter）" disabled>

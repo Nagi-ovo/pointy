@@ -63,7 +63,7 @@ html, body {
 .pill .title { min-width: 0; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill.run .title { color: var(--muted); }
 .pill:hover .title { color: var(--text); }
-/* × 只是不看了，不打断 DSH */
+/* × 只是不看了，不打断 agent */
 .pill .x {
   flex: none; width: 22px; height: 22px; margin-left: -2px;
   display: inline-flex; align-items: center; justify-content: center;
