@@ -11,13 +11,14 @@ function update() {
   if (!tray) return
   const agent = deps.agent()
   const { connected, pendingApprovals } = agent.status()
+  const extensions = deps.extensionCount()
   const status = [
     pendingApprovals > 0 ? `${pendingApprovals} 个操作等你批准` : '',
     settings.dnd ? '勿扰中' : '',
     connected ? '' : `${agent.name} 未连接`,
+    extensions ? '' : '浏览器扩展未连接',
   ].filter(Boolean).join('\n')
   tray.setToolTip(status ? `Pointy\n${status}` : 'Pointy')
-  const extensions = deps.extensionCount()
   tray.setContextMenu(Menu.buildFromTemplate([
     {
       label: '晃一下鼠标指认',
@@ -30,7 +31,7 @@ function update() {
     },
     extensions
       ? { label: `浏览器扩展已连接（${extensions}）`, enabled: false }
-      : { label: '安装浏览器扩展（推荐）…', click: () => deps.showExtensionGuide() },
+      : { label: '浏览器扩展未连接，点这里安装…', click: () => deps.showExtensionGuide() },
     { type: 'separator' },
     { label: '使用说明…', click: () => deps.showWelcome() },
     { label: '勿扰模式', type: 'checkbox', checked: settings.dnd, click: (item) => { saveSettings({ dnd: item.checked }); visibilityChanged() } },

@@ -92,6 +92,7 @@ for (const b of document.querySelectorAll('#mode button')) {
     mode = b.dataset.mode
     try { localStorage.setItem(MODE_KEY, mode) } catch {}
     renderMode()
+    renderModel()
     input.focus()
   })
 }
@@ -200,9 +201,10 @@ async function loadSuggestions() {
 }
 
 // ---------- 发送目标 ----------
-// 默认：当前会话 5 分钟内用过且没在跑 → 插进去；否则新任务。按网站记住手动选择。
-const RECENT_MS = 5 * 60 * 1000
-const CHOICE_KEY = 'dshpet.targetBySite' // 键名是旧的，改了会丢掉用户记住的选择
+// 默认开新任务；只有在同一个网址（普通程序是同一个窗口）5 分钟内接着问，才默认接着上一个对话。
+// 以前是「DSH 当前会话 5 分钟内用过就插进去」，连着看不同网页时问题会串进不相干的对话
+const SAME_PAGE_MS = 5 * 60 * 1000
+const LAST_ASK_KEY = 'pointy.lastAsk' // { page, sessionId, at }：最近一次从哪一页问到了哪个会话
 const pendingSessions = new Map()
 const targetLabel = $('target-label')
 const menu = $('target-menu')
@@ -217,7 +219,7 @@ let workspaceId // 新任务放进哪个工作区，全局记住
 const WORKSPACE_KEY = 'pointy.workspace'
 let currentId // agent 里"当前"的会话
 let targetValue = 'new' // 'new' 或 sessionId
-let siteKey = ''
+let pageKey = '' // 这张卡片指的是哪一页：网址（去掉 #）或「程序名|窗口标题」
 
 // agent 给的标题都能直接显示（它自己的临时标题在适配那边滤掉了）；没标题的是还没起好
 const titleOf = (s) => s.title || '还没起标题的会话'
@@ -233,24 +235,18 @@ function ago(ms) {
 const metaOf = (s) => (s.running ? '运行中' : ago(s.updatedAt))
 const workspaceTitle = () => workspaces.find(w => w.id === workspaceId)?.title ?? '默认工作区'
 
-function loadChoices() {
-  try { return JSON.parse(localStorage.getItem(CHOICE_KEY) ?? '{}') } catch { return {} }
-}
-function saveChoice(value) {
-  if (!siteKey) return
-  const all = loadChoices()
-  // 选的是当前会话就记"当前"，下次换了当前会话也照样插进去
-  all[siteKey] = value === currentId ? 'current' : value
-  try { localStorage.setItem(CHOICE_KEY, JSON.stringify(all)) } catch {}
+function defaultTarget() {
+  let last
+  try { last = JSON.parse(localStorage.getItem(LAST_ASK_KEY) ?? 'null') } catch {}
+  if (!last || !pageKey || last.page !== pageKey || Date.now() - Number(last.at) > SAME_PAGE_MS) return 'new'
+  const s = known.get(last.sessionId)
+  return s && !s.running ? s.sessionId : 'new'
 }
 
-function defaultTarget() {
-  const saved = loadChoices()[siteKey]
-  if (saved === 'new') return 'new'
-  if (saved === 'current' && currentId) return currentId
-  if (saved && known.has(saved)) return saved
-  const current = sessions.find(s => s.sessionId === currentId)
-  return current && !current.running && Date.now() - Number(current.updatedAt) < RECENT_MS ? current.sessionId : 'new'
+/** 记下这一页问到了哪个会话：同一页 5 分钟内再问，默认接着它 */
+function rememberAsk(id) {
+  if (!pageKey || !id) return
+  try { localStorage.setItem(LAST_ASK_KEY, JSON.stringify({ page: pageKey, sessionId: id, at: Date.now() })) } catch {}
 }
 
 function renderTarget() {
@@ -261,17 +257,18 @@ function renderTarget() {
   targetLabel.textContent = s ? `接着：${trunc(titleOf(s), 16)}` : '新任务'
   $('target-meta').textContent = s ? `· ${metaOf(s)}` : otherWs ? `· ${trunc(workspaceTitle(), 12)}` : ''
   $('target-meta').classList.toggle('running', !!s?.running)
+  // 要接到一个已有对话时用正文颜色，免得没看到就发进去了
+  $('target').classList.toggle('continuing', !!s)
   $('target').title = s ? `${titleOf(s)}\n最后活动：${ago(s.updatedAt)}${s.running ? '（运行中，消息会排在这一轮之后）' : ''}\nTab 切换当前会话 / 新任务` : `开一个新的 ${agentName} 任务（${workspaceTitle()}）\nTab 切换当前会话 / 新任务`
   // 正要插进某个会话时，旁边给个 + 一下改成新对话；已经是新任务或者问过了就不显示
   $('new-task').hidden = !s || $('target').disabled
 }
 $('new-task').addEventListener('click', () => { setTarget('new', true); input.focus() })
 
-function setTarget(value, remember) {
+function setTarget(value) {
   targetValue = value
   renderTarget()
   syncModelBase()
-  if (remember) saveChoice(value)
 }
 
 // 下拉：顶上搜索框；空着显示最近 5 个，输入后搜标题（agent 支持的话也搜聊过的内容）。新任务那行可以换工作区
@@ -386,7 +383,7 @@ function openMenu() {
     ws.addEventListener('click', (e) => { e.stopPropagation(); wsList.hidden = !wsList.hidden; fitMenu() })
     parts.push(wsList)
   }
-  parts.push(Object.assign(document.createElement('div'), { className: 'menu-hint', textContent: siteKey ? `在 ${siteKey} 上会记住你的选择 · Tab 快速切换` : 'Tab 快速切换' }))
+  parts.push(Object.assign(document.createElement('div'), { className: 'menu-hint', textContent: 'Tab 切换当前对话 / 新任务' }))
   menu.replaceChildren(...parts)
   menu.hidden = false
   fillList(recentRows(), false)
@@ -459,7 +456,7 @@ async function loadSessions() {
   models = res.models ?? []
   defaultModel = res.defaultModel
   routeModel = res.model ?? ''
-  setTarget(defaultTarget(), false)
+  setTarget(defaultTarget())
 }
 
 // ---------- 模型 ----------
@@ -468,8 +465,9 @@ const modelMenu = $('model-menu')
 let models = [] // { provider, providerName, model, name, efforts?: [{ id, name }], defaultEffort? }
 let defaultModel // 新任务用的 { provider, model, reasoningEffort? }
 let routeModel = '' // 拿不到目录时显示的模型 id
-let modelBase // 目标会话现在用的模型（含思考强度）
-let modelPick // 用户在卡片里选的模型（含思考强度）
+let modelBase // 目标会话平时用的模型（含思考强度）
+let modelPick // 用户在卡片里手动选的模型（含思考强度）
+let sessionModel // 目标会话此刻用的模型：快答临时调低过的话和 modelBase 不一样
 
 const sameModel = (a, b) => !!a && !!b && a.provider === b.provider && a.model === b.model
 const entryOf = (m) => models.find(x => sameModel(x, m))
@@ -481,30 +479,58 @@ const prettyId = (id) => id.split(/[-_]/).map(w => w.toLowerCase() === 'deepseek
 const modelName = (m) => m ? (entryOf(m)?.name ?? prettyId(m.model)) : (routeModel ? prettyId(routeModel) : 'DeepSeek')
 const effortName = (m) => entryOf(m)?.efforts?.find(e => e.id === effortOf(m))?.name ?? ''
 
+// 快答默认用低思考强度（模型有 low 这一档才换），完整用会话平时的档；手动选过就按手动选的。
+// 自动调的只改这个会话，不动 agent 的默认模型（发出去时带 sessionOnly）
+function lowOf(m) {
+  if (!m || !entryOf(m)?.efforts?.some(e => e.id === 'low')) return m
+  return { provider: m.provider, model: m.model, reasoningEffort: 'low' }
+}
+const autoChoice = () => (mode === 'quick' ? lowOf(modelBase) : modelBase)
+const wantedModel = () => modelPick ?? autoChoice()
+
 function renderModel() {
-  const m = modelPick ?? modelBase
+  const m = wantedModel()
   const effort = effortName(m)
   $('model-label').textContent = effort ? `${modelName(m)} · ${effort}` : modelName(m)
   $('model').disabled = !models.length
 }
 
-/** 选了模型或思考强度：和目标会话现在的一样就不算换 */
+/** 选了模型或思考强度：和这一档默认会用的一样就不算手动选 */
 function pickModel(choice) {
-  modelPick = sameChoice(choice, modelBase) ? undefined : choice
+  modelPick = sameChoice(choice, autoChoice()) ? undefined : choice
   renderModel()
 }
 
 /** 目标换了：显示那个会话自己的模型（用户手动选过就保持手动选的） */
 function syncModelBase() {
   const s = known.get(sessionId ?? targetValue)
-  modelBase = s ? s.model : (targetValue === 'new' && sessionId === undefined ? defaultModel : modelBase)
+  modelBase = s ? (loweredFrom(s) ?? s.model) : (targetValue === 'new' && sessionId === undefined ? defaultModel : modelBase)
+  if (sessionId === undefined) sessionModel = s ? s.model : modelBase
   renderModel()
 }
+
+// 快答把哪些会话临时调低过、原来是哪一档：接着这个会话用完整问时要换回原来的档
+const LOWERED_KEY = 'pointy.loweredSessions'
+const loweredMap = () => { try { return JSON.parse(localStorage.getItem(LOWERED_KEY) ?? '{}') } catch { return {} } }
+function loweredFrom(s) {
+  const was = loweredMap()[s.sessionId]
+  // 会话现在还是我们调低的那一档才算数；用户在 agent 里自己换过就以那边为准
+  return was && s.model && sameChoice(s.model, lowOf(was)) ? was : undefined
+}
+function rememberLowered(id, was) {
+  const all = loweredMap()
+  if (was) all[id] = was
+  else delete all[id]
+  const keys = Object.keys(all)
+  for (const k of keys.slice(0, Math.max(0, keys.length - 50))) delete all[k]
+  try { localStorage.setItem(LOWERED_KEY, JSON.stringify(all)) } catch {}
+}
+let loweredPending // 这一问发出前会话原来的档（快答自动调低时），会话 id 回来再记
 
 function openModelMenu() {
   if ($('model').disabled) return
   closeMenu()
-  const current = modelPick ?? modelBase
+  const current = wantedModel()
   const multi = new Set(models.map(m => m.provider)).size > 1
   const items = []
   let group
@@ -584,6 +610,8 @@ function addTurn(youText) {
   thread.append(Object.assign(document.createElement('div'), { className: 'you', textContent: youText }))
   const el = Object.assign(document.createElement('div'), { className: 'reply' })
   thread.append(el)
+  // 进度行紧跟在这一问下面（回答出来后在回答下面），不在卡片底部
+  thread.append(activity)
   reply = { el, text: '' }
   // 刚问的这句要看得见
   thread.scrollTop = thread.scrollHeight
@@ -611,15 +639,18 @@ async function send(instruction, label) {
   input.value = ''
   suggestBox.hidden = true
   setStatus('running', '正在做')
-  activity.hidden = false
-  activity.className = ''
-  activity.textContent = `发给 ${agentName} 了…`
+  const sendMode = mode
+  startProgress(sendMode === 'deep')
+  showActivity(`发给 ${agentName} 了`)
   autoGrow()
-  // 只有换了模型才让 agent 切；切过之后这就是这个会话的模型
-  const model = modelPick && !sameChoice(modelPick, modelBase) ? modelPick : undefined
+  // 会话此刻的模型和这次要用的不一样才让 agent 切。手动选的会成为这个会话以后的模型；
+  // 快答自动调低的只给这个会话用，不改 agent 的默认模型
+  const wanted = wantedModel()
+  const change = wanted && !sameChoice(wanted, sessionModel) ? wanted : undefined
+  const manual = !!modelPick
+  const model = change ? { ...change, ...(manual ? {} : { sessionOnly: true }) } : undefined
   closeModelMenu()
   // 截图只跟第一问走
-  const sendMode = mode
   const ws = to === 'new' && workspaceId ? { workspaceId } : {}
   const shots = followUp ? [] : [image, wideImage].filter(Boolean)
   const ok = await window.card.send({
@@ -633,13 +664,23 @@ async function send(instruction, label) {
   // 发出去之后引用和截图就定了，× 收起来
   if (ok && !followUp) {
     for (const b of document.querySelectorAll('.drop')) b.hidden = true
+    // 问出去以后引用只用来提醒问的是哪段，收成一行，点一下再展开
+    quote.classList.add('compact')
     // 问出去了，指认的高亮框就没用了，让Pointy撤掉
     window.card.asked()
   }
-  if (ok && model) { modelBase = model; modelPick = undefined; renderModel() }
+  if (ok && change) {
+    sessionModel = change
+    if (manual) { modelBase = change; modelPick = undefined }
+    // 自动调低：记下原来的档；自动换回原来的档：不用再记
+    loweredPending = manual ? null : sameChoice(change, modelBase) ? null : modelBase
+    if (sessionId !== undefined) { rememberLowered(sessionId, loweredPending); loweredPending = undefined }
+    renderModel()
+  }
   if (!ok) {
     // agent 可以没开：提示一下，右上角 ↗ 能把它叫起来
     setStatus('error', `${agentName} 没连上`)
+    stopProgress()
     activity.className = 'error'
     activity.textContent = `${agentName} 没开或没连上。点右上角 ↗ 打开 ${agentName}，连上后再发一次。`
     input.value = extra
@@ -650,10 +691,83 @@ async function send(instruction, label) {
   setTimeout(() => {
     if (askId === sent && sessionId === undefined && !followUp) {
       setStatus('error', `${agentName} 没回应`)
+      stopProgress()
       activity.className = 'error'
       activity.textContent = `${agentName} 没回应。插件可能还是旧版，重启一次 ${agentName} 再试。`
     }
   }, 10_000)
+}
+
+// ---------- 进度行 ----------
+// 当前这一步一行；完整档在上面列最近 3 步，后面带已用时间
+let progressFull = false
+let progressStart = 0
+let progressTimer
+let progressSteps = [] // 完整档做过的步骤（人话），最新的在最后
+let progressNow = ''
+
+function startProgress(full) {
+  progressFull = full
+  progressStart = Date.now()
+  progressSteps = []
+  progressNow = ''
+  clearInterval(progressTimer)
+  if (full) progressTimer = setInterval(renderProgress, 1000)
+}
+function stopProgress() {
+  clearInterval(progressTimer)
+  progressTimer = undefined
+}
+const elapsed = () => {
+  const sec = Math.floor((Date.now() - progressStart) / 1000)
+  return sec < 60 ? `${sec} 秒` : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+}
+function showActivity(text) {
+  // 完整档：换到新的一步时，上一步记进列表
+  if (progressFull && progressNow && text !== progressNow && !/^(在想|正在写|发给)/.test(progressNow)) {
+    progressSteps = [...progressSteps.filter(s => s !== progressNow), progressNow].slice(-3)
+  }
+  progressNow = text
+  activity.hidden = false
+  activity.className = 'busy'
+  renderProgress()
+}
+function renderProgress() {
+  if (activity.className !== 'busy') return
+  const steps = progressFull ? progressSteps.map(s => `<div class="step">${escapeText(s.replace(/…$/, ''))}</div>`).join('') : ''
+  const time = progressFull ? `<span class="time">${elapsed()}</span>` : ''
+  activity.innerHTML = `${steps}<div class="now"><span class="dots"></span>${escapeText(progressNow.replace(/…$/, ''))}${time}</div>`
+  fitHeight()
+}
+const escapeText = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+
+// 完整档做完：从回答里挑出关键链接（PR、issue、网页、本机文件），放在回答下面
+function keyLinks(text) {
+  const out = []
+  const seen = new Set()
+  for (const m of text.matchAll(/https?:\/\/[^\s)>\]"'`，。]+/g)) {
+    const href = m[0].replace(/[.,;:]+$/, '')
+    if (seen.has(href)) continue
+    seen.add(href)
+    let label = href
+    try {
+      const u = new URL(href)
+      const parts = u.pathname.split('/').filter(Boolean)
+      if (/(^|\.)github\.com$/.test(u.hostname) && parts[2] === 'pull' && parts[3]) label = `PR #${parts[3]}`
+      else if (/(^|\.)github\.com$/.test(u.hostname) && parts[2] === 'issues' && parts[3]) label = `issue #${parts[3]}`
+      else label = `${u.hostname.replace(/^www\./, '')}${parts.length ? `/${parts.slice(-1)[0]}` : ''}`
+    } catch {}
+    out.push({ href, label: label.length > 28 ? `${label.slice(0, 27)}…` : label })
+  }
+  // PR、issue 排前面
+  out.sort((a, b) => /^(PR|issue) #/.test(b.label) - /^(PR|issue) #/.test(a.label))
+  for (const m of text.matchAll(/\b[a-zA-Z]:\\[^\s`"'<>|*?，。)]+/g)) {
+    const href = m[0].replace(/[.,;:]+$/, '')
+    if (seen.has(href)) continue
+    seen.add(href)
+    out.push({ href, label: href.split(/[\\/]/).filter(Boolean).pop() })
+  }
+  return out.slice(0, 3)
 }
 
 // 只有停在底部时才跟着新字往下滚；用户往上翻了就不拽回来，翻回底部再继续跟
@@ -666,9 +780,15 @@ function renderReply() {
 // 问过就开那个会话；没问过就开选中的目标会话；目标是"新任务"时只把 agent 提到前台
 const openInAgent = () => window.card.openAgent(sessionId ?? (targetValue !== 'new' ? targetValue : undefined))
 
-function addAfterLinks() {
+function addAfterLinks(links = []) {
   const after = document.createElement('div')
   after.className = 'after'
+  for (const l of links) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'key-link', title: l.href })
+    b.textContent = l.label
+    b.addEventListener('click', () => window.card.openLink(l.href))
+    after.append(b)
+  }
   const COPY_ICON = '<svg viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>'
   const copy = Object.assign(document.createElement('button'), { type: 'button', className: 'copy', title: '复制回答' })
   copy.innerHTML = COPY_ICON
@@ -684,6 +804,8 @@ function addAfterLinks() {
   open.addEventListener('click', openInAgent)
   after.append(open, copy)
   thread.append(after)
+  // 下一问的进度行要排在这一轮后面
+  thread.append(activity)
 }
 
 /** 卡片顶上那一行：从哪指过来的。网页写域名，普通程序写窗口标题或程序名 */
@@ -710,8 +832,13 @@ window.card.onInit((data) => {
   agentName = data.agent?.name || agentName
   $('open-agent').title = `在 ${agentName} 中打开`
   // "按网站记住"的网站：浏览器里是域名，普通程序是程序名
-  try { siteKey = g.url ? new URL(g.url).hostname : (g.source?.app ?? '') } catch { siteKey = g.source?.app ?? '' }
+  pageKey = g.url ? String(g.url).split('#')[0] : (g.source?.app ? `${g.source.app}|${g.source.title ?? ''}` : '')
   $('source').textContent = describeSource(g)
+  if (g.note?.text) {
+    $('note').querySelector('span').textContent = g.note.text
+    $('note').querySelector('button').hidden = !g.note.install
+    $('note').hidden = false
+  }
   element = g.element
   selection = (element?.fields?.正文 || g.text || '').trim()
   if (element && !KEEP_AS_IS.has(element.kind)) selection = cleanText(selection)
@@ -776,21 +903,25 @@ window.card.onAgent((msg) => {
       $('target').disabled = true
       $('card').classList.add('asked')
       showTitle()
+      rememberAsk(sessionId)
+      if (loweredPending !== undefined) { rememberLowered(sessionId, loweredPending); loweredPending = undefined }
+      // 发问前那一行收起来了，卡片跟着变矮，别把空出来的高度留给对话区
+      fitHeight()
       $('new-task').hidden = true
       input.placeholder = '接着问…'
       break
     case 'ask-step':
-      if (!finished) activity.textContent = '在想…'
+      if (!finished) showActivity('在想…')
       break
     case 'ask-delta':
       reply.text += msg.text
       allText += msg.text
       renderReply()
-      if (!finished) activity.textContent = '正在写…'
+      if (!finished && progressNow !== '正在写…') showActivity('正在写…')
       fitHeight()
       break
     case 'ask-activity':
-      if (!finished) activity.textContent = String(msg.text || '正在处理…')
+      if (!finished) showActivity(String(msg.text || '正在处理…'))
       break
     case 'ask-done':
       finished = true
@@ -800,15 +931,20 @@ window.card.onAgent((msg) => {
         showTitle()
       }
       setStatus(msg.reason === 'completed' ? 'done' : 'error', msg.reason === 'completed' ? '完成' : `结束（${msg.reason}）`)
+      stopProgress()
+      activity.className = ''
       activity.hidden = msg.reason === 'completed'
       if (msg.reason !== 'completed') activity.textContent = `结束（${msg.reason}）`
-      if (reply?.text) addAfterLinks()
+      if (reply?.text) addAfterLinks(progressFull ? keyLinks(reply.text) : [])
+      // 完整档的回答长，出字时一路滚到了底；做完回到这一轮回答的开头，先看到第一句结论
+      if (progressFull && reply?.el && reply.text.length > 400) thread.scrollTop = Math.max(0, reply.el.offsetTop - thread.offsetTop - 8)
       allText += '\n\n'
       fitHeight()
       window.card.rendered('answered')
       break
     case 'ask-error':
       setStatus('error', '出错了')
+      stopProgress()
       activity.hidden = false
       activity.className = 'error'
       activity.textContent = `出错了：${msg.error}`
@@ -869,8 +1005,13 @@ $('shot').querySelector('.drop').addEventListener('click', () => { image = undef
 for (const img of $('shot').querySelectorAll('img')) img.addEventListener('load', () => fitHeight())
 $('quote-wrap').querySelector('.drop').addEventListener('click', () => { selection = ''; $('quote-wrap').hidden = true; fitHeight() })
 $('open-agent').addEventListener('click', openInAgent)
+$('note').querySelector('button').addEventListener('click', () => window.card.extensionGuide())
 // 回复里的链接不在卡片里跳转，交给主进程：网址用浏览器打开，本机文件在资源管理器里定位
+// 图片加载完才知道高度，再量一次；点图片用系统看图打开
+thread.addEventListener('load', (e) => { if (e.target.tagName === 'IMG') fitHeight() }, true)
 thread.addEventListener('click', (e) => {
+  const img = e.target.closest('img[data-path]')
+  if (img) { e.preventDefault(); window.card.openImage(img.dataset.path); return }
   const a = e.target.closest('a[data-href]')
   if (!a) return
   e.preventDefault()

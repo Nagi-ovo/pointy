@@ -1,4 +1,4 @@
-// 卡片里够用的 Markdown：代码块、表格、引用块、列表、标题、粗体、行内代码、链接。
+// 卡片里够用的 Markdown：代码块、表格、引用块、列表、标题、粗体、行内代码、链接、本机图片。
 // 先转义再拼标签，不会把回复里的 HTML 当真；链接只给 http(s) 和本机绝对路径，点击由卡片交给主进程处理。
 
 const escapeHtml = (s) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
@@ -13,9 +13,31 @@ function linkTarget(raw) {
   return undefined
 }
 
+// ![说明](路径)：本机图片直接显示缩略图（点开用系统看图），网络图片只给链接
+const IMG = /!\[([^\]\n]*)\]\((?:&lt;([^\n]+?)&gt;|([^)\s]+))\)/g
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i
+
+function localImage(raw) {
+  let path = raw.replace(/&amp;/g, '&')
+  if (/^file:\/\/\//i.test(path)) {
+    try { path = decodeURI(path.slice(8)) } catch { return undefined }
+  }
+  if (!/^[a-z]:[\\/]/i.test(path) || !IMAGE_FILE.test(path)) return undefined
+  return path.replace(/\//g, '\\')
+}
+const fileUrl = (path) => `file:///${encodeURI(path.replace(/\\/g, '/')).replace(/#/g, '%23').replace(/\?/g, '%3F')}`
+const attr = (v) => v.replace(/&(?!amp;|lt;|gt;|quot;)/g, '&amp;').replace(/"/g, '&quot;')
+
 function inline(text) {
   return text
     .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(IMG, (m, alt, angled, plain) => {
+      const raw = angled ?? plain
+      const path = localImage(raw)
+      if (path) return `<img class="md-img" src="${attr(fileUrl(path))}" alt="${attr(alt)}" title="点开用系统看图" data-path="${attr(path)}">`
+      const href = linkTarget(raw)
+      return href ? `<a href="#" data-href="${attr(href)}" title="${attr(href)}">${alt || '图片'}</a>` : m
+    })
     .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
     .replace(LINK, (m, label, angled, plain) => {
       const href = linkTarget(angled ?? plain)

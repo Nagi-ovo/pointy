@@ -614,9 +614,24 @@ export function apply(ctx) {
     }
     if (agent === undefined) throw new Error('这个会话打不开，先在 DSH 里点开它')
     // Switching works like DSH's own picker: the session uses it from the next request on.
+    // A sessionOnly choice (the card lowering thinking for a quick answer) changes only this
+    // session: the same steps as selectModel minus saving it as DSH's default model.
     if (model?.provider && model?.model) {
-      if (!controller?.selectModel) throw new Error('这个 DSH 版本不能从外面换模型')
-      await controller.selectModel({ sessionId, provider: String(model.provider), model: String(model.model), ...(model.reasoningEffort ? { reasoningEffort: String(model.reasoningEffort) } : {}) })
+      const request = { provider: String(model.provider), model: String(model.model), ...(model.reasoningEffort ? { reasoningEffort: String(model.reasoningEffort) } : {}) }
+      if (model.sessionOnly) {
+        const sessionAgents = controller?.agents
+        if (sessionAgents?.selectForNextRequest && ctx.llm?.resolveCallConfig) {
+          const resolved = await ctx.llm.resolveCallConfig(request)
+          const selected = { provider: resolved.provider, model: resolved.model, ...(resolved.reasoningEffort === undefined ? {} : { reasoningEffort: resolved.reasoningEffort }) }
+          const apply = async () => sessionAgents.selectForNextRequest(agent, selected)
+          await (sessionAgents.serializeImageAdmission ? sessionAgents.serializeImageAdmission(agent, apply) : apply())
+        } else {
+          logger.warn('pointy: this DSH cannot change one session\'s model without saving the default; keeping the session\'s model')
+        }
+      } else {
+        if (!controller?.selectModel) throw new Error('这个 DSH 版本不能从外面换模型')
+        await controller.selectModel({ sessionId, ...request })
+      }
     }
     const content = await promptContent(text, Array.isArray(images) ? images : [image])
     asks.set(sessionId, askId)

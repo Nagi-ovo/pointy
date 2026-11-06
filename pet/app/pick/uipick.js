@@ -159,9 +159,10 @@ function focusRect(rect, point, scale, zoom = 1) {
 
 /**
  * 进入指认，直到左键或空格确认 / Esc 或右键 / 超时。
+ * @param note 提示条后面补的一句（比如浏览器扩展没连上）
  * @returns {Promise<{ element, image } | null>}
  */
-function pickNative() {
+function pickNative({ note } = {}) {
   const cursor = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursor)
   const overlay = new BrowserWindow({
@@ -175,6 +176,7 @@ function pickNative() {
   overlay.setAlwaysOnTop(true, 'screen-saver')
   overlay.loadFile(path.join(__dirname, 'overlay', 'overlay.html'))
   overlay.once('ready-to-show', () => overlay.showInactive())
+  if (note) overlay.webContents.once('did-finish-load', () => { if (!overlay.isDestroyed()) overlay.webContents.send('note', note) })
   swapCursor(display.scaleFactor)
 
   let levelUp = 0
@@ -288,7 +290,7 @@ function pickNative() {
           kind: 'ui-element',
           site: '',
           tag: detail.control,
-          fields: { 控件: label(detail), 名称: (detail.name ?? '').slice(0, 120), 类名: detail.className ?? '' },
+          fields: { 控件: label(detail), 名称: (detail.name ?? '').slice(0, 120), 类名: detail.className ?? '', ...(detail.href ? { 链接: detail.href } : {}) },
           page: {},
           text: detail.text ?? '',
           links: [],

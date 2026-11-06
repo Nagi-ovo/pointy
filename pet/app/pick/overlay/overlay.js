@@ -26,6 +26,13 @@ window.overlay.onHighlight((h) => {
 })
 
 
+// 提示条后面补一句（比如浏览器里扩展没连上）
+window.overlay.onNote((text) => {
+  const el = document.getElementById('note-hint')
+  el.textContent = text ? `· ${text}` : ''
+  el.hidden = !text
+})
+
 // 选中之后：只留高亮框，控件名和操作提示收起来
 window.overlay.onHold(() => {
   what.style.display = 'none'
