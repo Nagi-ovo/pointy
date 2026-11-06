@@ -14,7 +14,9 @@ const KIND_LABEL = {
 // DSH 这类完整的编程代理，不说的话一个小问题它也会去下载、跑命令、读图，一两分钟才答（11-02 实测）
 const QUICK_ANSWER = '回答要求：这是随手一问，请直接、简短地回答（几句话到一小段）。不要下载文件、不要运行命令、不要生成或读取图片；只有确实需要最新信息时才做一两次网页搜索，搜完就答。用户想深入会自己追问。'
 // 追问时从快答换到完整，补这一句，免得被上一问的要求压着
-const FULL_ANSWER = '回答要求：这次可以充分查资料、看代码、用工具，把问题弄清楚再回答，不用受前面「简短回答」的限制。'
+const FULL_ANSWER = '回答要求：这次可以充分查资料、看代码、用工具，把问题弄清楚再回答，不用受前面「简短回答」的限制。最后回复的第一句先用一句话说结论（做了什么、结果怎样），有关键链接（PR、文件、网页）就附上。'
+// 完整档第一问不限制怎么干活，只要求做完时先给一句结论：卡片窗口小，长报告先看结论
+const FULL_NOTE = '回答要求：做完以后，最后回复的第一句先用一句话说结论（做了什么、结果怎样），有关键链接（PR、文件、网页）就附上。'
 
 const MATERIAL_OPEN = '<抓取内容>'
 const MATERIAL_CLOSE = '</抓取内容>'
@@ -45,11 +47,11 @@ function materialLines(m) {
 
 /**
  * 第一问：抓到的内容包在 <抓取内容> 里，用户的问题单独放最后。
- * mode 是 'quick' 时加上快答要求；question 为空时（拿去要建议问题）只有内容块
+ * 快答加上快答要求，完整加上「做完先给一句结论」；question 为空时（拿去要建议问题）只有内容块
  */
 function composeFirst({ material, question = '', mode }) {
   const lines = materialLines(material)
-  const note = mode === 'quick' ? QUICK_ANSWER : ''
+  const note = mode === 'quick' ? QUICK_ANSWER : question ? FULL_NOTE : ''
   if (!lines.length) return [note, question].filter(Boolean).join('\n\n')
   const block = [
     MATERIAL_OPEN,

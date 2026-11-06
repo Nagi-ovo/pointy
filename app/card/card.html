@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: file:; style-src 'self'">
   <title>Pointy</title>
   <link rel="stylesheet" href="card.css">
 </head>
@@ -24,6 +24,7 @@
       </button>
     </header>
 
+    <div id="note" hidden><span></span><button type="button" hidden>装扩展</button></div>
     <div id="shot" hidden><img alt="指到的那块的截图"><img class="wide" alt="整个区域的截图" hidden><button class="drop" type="button" title="不发这张图">×</button></div>
     <div id="quote-wrap" hidden><blockquote id="quote" title="点一下展开"></blockquote><button class="drop" type="button" title="不发这段内容">×</button></div>
 

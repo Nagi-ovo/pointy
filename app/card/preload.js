@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('card', {
   onSetAside: (fn) => ipcRenderer.on('card-set-aside', () => fn()),
   onRestore: (fn) => ipcRenderer.on('card-restore', () => fn()),
   openLink: (href) => ipcRenderer.send('card-open-link', href),
+  openImage: (path) => ipcRenderer.send('card-open-image', path),
+  extensionGuide: () => ipcRenderer.send('card-extension-guide'),
   gripStart: () => ipcRenderer.send('card-grip-start'),
   gripMove: () => ipcRenderer.send('card-grip-move'),
   gripEnd: () => ipcRenderer.send('card-grip-end'),

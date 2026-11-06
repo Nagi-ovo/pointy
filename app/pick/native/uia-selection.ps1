@@ -80,6 +80,8 @@ function TextOf($el) {
     if ($visible.Trim()) { return $visible }
     return $doc.Substring(0, $MAX_TEXT)
   }
+  # 链接的 Value 是网址，要的是链接上的字（网址另外放进 href）
+  if ($el.Current.ControlType -eq [System.Windows.Automation.ControlType]::Hyperlink -and $el.Current.Name) { return $el.Current.Name }
   if ($el.TryGetCurrentPattern($ValuePattern::Pattern, [ref]$p) -and $p.Current.Value) { return $p.Current.Value }
   $sb = New-Object System.Text.StringBuilder
   $walker = $TreeWalker::ControlViewWalker
@@ -145,6 +147,8 @@ while ($true) {
           $result.readable = Readable $el
           $result.win = WindowRect $el
           $result.text = (TextOf $el).Trim()
+          $vp = $null
+          if ($el.Current.ControlType -eq [System.Windows.Automation.ControlType]::Hyperlink -and $el.TryGetCurrentPattern($ValuePattern::Pattern, [ref]$vp) -and $vp.Current.Value -match '^https?://') { $result.href = $vp.Current.Value }
           if ($result.text.Length -gt $MAX_TEXT) { $result.text = $result.text.Substring(0, $MAX_TEXT) }
           $result.ok = $true
         }
