@@ -75,7 +75,7 @@ func TestLanguageFollowsTheSystemUnlessChosen(t *testing.T) {
 // Go code says its texts through the catalogs; Chinese in a string
 // literal is a text that skipped them. Patterns that match Chinese window
 // titles are listed here.
-var matchesChinese = map[string]bool{"internal/pick/selection.go": true}
+var matchesChinese = map[string]bool{"internal/desktop/block.go": true}
 
 func TestGoCodeHasNoChineseLiterals(t *testing.T) {
 	root := filepath.Join("..", "..")
