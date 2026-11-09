@@ -4,7 +4,9 @@
 package main
 
 import (
+	"encoding/json/v2"
 	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -16,20 +18,29 @@ import (
 	"github.com/pointylab/pointy/desktop/internal/agent"
 	"github.com/pointylab/pointy/desktop/internal/browser"
 	"github.com/pointylab/pointy/desktop/internal/config"
+	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/server"
 	"github.com/pointylab/pointy/desktop/internal/ui"
 )
 
 const fullscreenPoll = 500 * time.Millisecond
 
+// windows is every window Pointy shows; its services are bound before
+// mygo runs.
+var windows = ui.New()
+
 func main() {
 	home := config.Home()
 	logError := func(kind string, err any) { config.LogError(home, kind, err) }
+	root := resourceRoot()
 	mygo.App.SetName("Pointy")
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	mygo.App.OnWindowAllClosed(func() {})
+	pages := os.DirFS(filepath.Join(root, "app"))
+	mygo.SetFrontend(pages)
+	mygo.Bind(windows.Services()...)
 	var dsh *agent.DSH
-	mygo.App.WhenReady(func() { dsh = start(home, logError) })
+	mygo.App.WhenReady(func() { dsh = start(home, root, pages, logError) })
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		if dsh != nil {
 			dsh.WillQuit()
@@ -41,7 +52,7 @@ func main() {
 	}
 }
 
-func start(home string, logError func(string, any)) *agent.DSH {
+func start(home, root string, pages fs.FS, logError func(string, any)) *agent.DSH {
 	// The port is the single-instance lock: a second Pointy on it exits.
 	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(config.Port())))
 	if err != nil {
@@ -57,20 +68,26 @@ func start(home string, logError func(string, any)) *agent.DSH {
 		mygo.App.Exit(1)
 		return nil
 	}
-	root := resourceRoot()
 	sys := newDesktop()
 	settings := config.LoadSettings(home)
 	vis := ui.NewVisibility(settings)
 
 	var tray *ui.Tray
 	changed := func() { tray.Update() }
-	exts := browser.New(browser.Deps{Home: home, BundledDir: filepath.Join(root, "extension"), OnChange: changed, Log: logError})
+	exts := browser.New(browser.Deps{
+		Home: home, BundledDir: filepath.Join(root, "extension"), OnChange: changed, Log: logError,
+		ShowNotice:  windows.ShowNotice,
+		OnSelection: func(g contract.Grab) { windows.OpenGrab(g, nil) },
+	})
 	exts.SyncUserExtension()
 
 	exe, _ := os.Executable()
 	userData, _ := mygo.App.Path(mygo.PathUserData)
 	hostPID, _ := strconv.Atoi(os.Getenv("POINTY_HOST_PID"))
 	dsh := agent.New(agent.Deps{
+		ToCards:         windows.ToCards,
+		OnTask:          windows.OnTask,
+		ShowHint:        windows.ShowHint,
 		Notify:          func(title, body string, click func()) { tray.Notify(title, body, click) },
 		FocusTab:        exts.FocusTab,
 		OpenURL:         func(u string) { mygo.Shell.OpenExternal(u) },
@@ -86,11 +103,28 @@ func start(home string, logError func(string, any)) *agent.DSH {
 		Quit:            mygo.App.Quit,
 	})
 
+	err = windows.Start(ui.Deps{
+		Agent:         dsh,
+		AgentName:     agent.Name,
+		Desktop:       sys,
+		Visibility:    vis,
+		Settings:      settings,
+		Pages:         pages,
+		Version:       installedVersion(root),
+		ExtensionDir:  exts.UserDir,
+		SyncExtension: exts.SyncUserExtension,
+		Log:           logError,
+	})
+	if err != nil {
+		logError("pages", err)
+	}
+
 	go func() {
 		err := server.Serve(ln, server.Routes{
 			Token:     token,
 			Plugin:    dsh.Attach,
 			Extension: exts.Authenticate,
+			Pair:      exts.Pair,
 			OnError:   func(kind string, err error) { logError(kind, err) },
 		})
 		logError("server", err)
@@ -105,8 +139,8 @@ func start(home string, logError func(string, any)) *agent.DSH {
 		Visibility:         vis,
 		Agent:              dsh.Status,
 		Extensions:         exts.Count,
-		ShowExtensionGuide: func() {},
-		ShowWelcome:        func() {},
+		ShowExtensionGuide: windows.ShowExtensionGuide,
+		ShowWelcome:        windows.ShowWelcome,
 		Quit:               mygo.App.Quit,
 		Log:                logError,
 	}, icon)
@@ -117,11 +151,24 @@ func start(home string, logError func(string, any)) *agent.DSH {
 
 	go func() {
 		for range time.Tick(fullscreenPoll) {
-			on, err := sys.FullscreenActive(nil)
+			on, err := sys.FullscreenActive(windows.OwnWindows())
 			vis.SetFullscreen(err == nil && on)
 		}
 	}()
+	windows.GreetOnStart()
 	return dsh
+}
+
+// installedVersion is the version of the plugin Pointy came with, or the
+// app's own.
+func installedVersion(root string) string {
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "..", "package.json")); err == nil && json.Unmarshal(b, &pkg) == nil && pkg.Version != "" {
+		return pkg.Version
+	}
+	return mygo.App.Version()
 }
 
 // resourceRoot is the directory holding app/, extension/ and assets/:

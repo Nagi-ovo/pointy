@@ -3,11 +3,23 @@
 // units are points on macOS and physical pixels on Windows.
 package desktop
 
+import "github.com/egoist/mygo"
+
 // WindowID is a system window: a CGWindowID on macOS, an HWND on Windows.
 type WindowID uint64
 
 // Point is a position in screen units.
 type Point struct{ X, Y float64 }
+
+// Level is how high a Pointy window floats.
+type Level int
+
+const (
+	// LevelFloating floats above other apps' windows, as cards and pills do.
+	LevelFloating Level = iota
+	// LevelScreenSaver floats above everything, menus and the Dock included.
+	LevelScreenSaver
+)
 
 // Foreground is the window the user works in.
 type Foreground struct {
@@ -26,11 +38,14 @@ type Desktop interface {
 	// whole display. own lists Pointy's windows, which never count.
 	FullscreenActive(own []WindowID) (bool, error)
 	Foreground() (Foreground, error)
-	// WindowID returns the system id of a window from mygo's NativeHandle.
-	WindowID(handle uintptr) WindowID
+	// WindowID returns the system id of a Pointy window.
+	WindowID(*mygo.Window) WindowID
 	// AttachToOwner keeps a Pointy window directly above owner while owner's
 	// app is in front, in place of floating above every app.
-	AttachToOwner(handle uintptr, owner WindowID) error
+	AttachToOwner(w *mygo.Window, owner WindowID) error
+	SetLevel(*mygo.Window, Level) error
+	// SetFocusable false keeps a window from ever taking the keyboard.
+	SetFocusable(w *mygo.Window, focusable bool) error
 	// WindowOrigin is a window's top-left corner.
 	WindowOrigin(id WindowID) (Point, error)
 	// ToDIP converts screen units to mygo's coordinates.
