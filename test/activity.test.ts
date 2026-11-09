@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { activityText, describeUrl } from '../app/agents/dsh/activity.ts'
+import { activityText, describeUrl } from '../plugin/src/activity.ts'
 
 test('GitHub URLs are named by what they point at', () => {
   assert.equal(describeUrl('https://github.com/pointylab/pointy/issues/5075'), 'issue #5075')
