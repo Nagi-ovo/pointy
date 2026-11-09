@@ -152,6 +152,7 @@ func (u *UI) Start(d Deps) error {
 func (u *UI) open(k kind, b mygo.Rectangle) *mygo.Window {
 	s := surfaces[k]
 	w := mygo.NewWindow(s.options(b, u.preload[s.page]))
+	u.check("window-prepare", u.deps.Desktop.PrepareWindow(w))
 	if s.level != desktop.LevelFloating {
 		u.check("window-level", u.deps.Desktop.SetLevel(w, s.level))
 	}
