@@ -5,6 +5,7 @@
 package desktop
 
 import (
+	"context"
 	"image"
 
 	"github.com/egoist/mygo"
@@ -80,6 +81,8 @@ type Desktop interface {
 	// AttachToOwner keeps a Pointy window directly above owner while owner's
 	// app is in front, in place of floating above every app.
 	AttachToOwner(w *mygo.Window, owner WindowID) error
+	// SetLevel may move a window it puts at LevelScreenSaver; set the
+	// window's bounds again after it.
 	SetLevel(*mygo.Window, Level) error
 	// SetFocusable false keeps a window from ever taking the keyboard.
 	SetFocusable(w *mygo.Window, focusable bool) error
@@ -122,7 +125,10 @@ type Desktop interface {
 	// SwapCursor shows Pointy's cursor in every app until RestoreCursor.
 	SwapCursor() error
 	RestoreCursor()
-	// Capture returns the pixels of r, in screen units, at the display's
-	// resolution.
-	Capture(r Rect) (image.Image, error)
+	// PrewarmCapture readies Capture, which may be slow the first time.
+	PrewarmCapture()
+	// Capture returns what the window of process pid shows within r, in
+	// screen units, at the display's resolution, without Pointy's own
+	// windows. A platform that captures the screen may ignore pid.
+	Capture(ctx context.Context, r Rect, pid int) (image.Image, error)
 }
