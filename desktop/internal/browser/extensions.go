@@ -44,6 +44,7 @@ type Extensions struct {
 	conns   map[string]extension
 	denied  map[string]bool
 	pairing bool
+	picking *picking
 }
 
 func New(d Deps) *Extensions {
@@ -124,6 +125,11 @@ type handler struct {
 }
 
 func (h *handler) OnMessage(m server.Message) {
+	switch m.Type {
+	case "pick-started", "picked", "pick-cancel", "pick-unavailable":
+		h.onPick(m)
+		return
+	}
 	if m.Type != "selection" || h.e.deps.OnSelection == nil {
 		return
 	}

@@ -29,11 +29,18 @@ const (
 	glideFrame    = 16 * time.Millisecond
 )
 
+// Held is the pick a card came from, kept drawn while the card needs it.
+type Held interface {
+	Release()
+	// Shift moves the pick's drawing as the window it was made in moves.
+	Shift(dx, dy float64)
+}
+
 type card struct {
-	win     *mygo.Window
-	init    contract.CardInit
-	width   int
-	release func()
+	win   *mygo.Window
+	init  contract.CardInit
+	width int
+	held  Held
 
 	kept             bool
 	keptBounds       mygo.Rectangle
@@ -44,10 +51,10 @@ type card struct {
 }
 
 func (c *card) releasePick() {
-	if c.release != nil {
-		r := c.release
-		c.release = nil
-		r()
+	if c.held != nil {
+		h := c.held
+		c.held = nil
+		h.Release()
 	}
 }
 
@@ -70,21 +77,21 @@ func cardBounds(height, width int) mygo.Rectangle {
 	return placeCard(cursor, mygo.Screen.DisplayNearestPoint(cursor).WorkArea, width, height)
 }
 
-// OpenGrab opens a card asking about g. release ends the pick that made
-// it, once the card no longer needs it.
-func (u *UI) OpenGrab(g contract.Grab, release func()) {
-	u.OpenCard(contract.CardInit{Grab: &g, Agent: &contract.AgentInfo{Name: u.deps.AgentName}}, release)
+// OpenGrab opens a card asking about g. held is the pick that made it,
+// released once the card no longer needs it.
+func (u *UI) OpenGrab(g contract.Grab, held Held) {
+	u.OpenCard(contract.CardInit{Grab: &g, Agent: &contract.AgentInfo{Name: u.deps.AgentName}}, held)
 }
 
 // OpenCard opens a card, setting the current one aside.
-func (u *UI) OpenCard(init contract.CardInit, release func()) {
-	mygo.RunOnMain(func() { u.openCard(init, release) })
+func (u *UI) OpenCard(init contract.CardInit, held Held) {
+	mygo.RunOnMain(func() { u.openCard(init, held) })
 }
 
-func (u *UI) openCard(init contract.CardInit, release func()) {
+func (u *UI) openCard(init contract.CardInit, held Held) {
 	if u.deps.Visibility.Suppressed() {
-		if release != nil {
-			release()
+		if held != nil {
+			held.Release()
 		}
 		return
 	}
@@ -99,7 +106,7 @@ func (u *UI) openCard(init contract.CardInit, release func()) {
 	if init.Mode == "pair" {
 		height = cardHPair
 	}
-	c := &card{init: init, width: u.cardWidth, release: release}
+	c := &card{init: init, width: u.cardWidth, held: held}
 	c.win = u.open(kindCard, cardBounds(height, c.width))
 	u.cards = append(u.cards, c)
 	u.current = c
@@ -169,7 +176,13 @@ func (u *UI) followOwner(c *card, owner desktop.WindowID) {
 		last = now
 		dx, dy := b.X-a.X, b.Y-a.Y
 		mygo.RunOnMain(func() {
-			if c.win.IsDestroyed() || !c.win.IsVisible() {
+			if c.win.IsDestroyed() {
+				return
+			}
+			if c.held != nil {
+				c.held.Shift(dx, dy)
+			}
+			if !c.win.IsVisible() {
 				return
 			}
 			r := c.win.Bounds()
