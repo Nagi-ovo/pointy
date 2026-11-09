@@ -173,10 +173,7 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 		Suppressed:  vis.Suppressed,
 		Browser:     exts,
 		OpenOverlay: func(b mygo.Rectangle) pick.Overlay { return windows.OpenOverlay(b) },
-		DisplayAt: func(p desktop.Point) mygo.Display {
-			q := sys.ToDIP(p)
-			return mygo.Screen.DisplayNearestPoint(mygo.Point{X: int(q.X), Y: int(q.Y)})
-		},
+		DisplayAt:   displayAt(sys),
 		Keys:        globalKeys(logError),
 		OpenGrab:    func(g contract.Grab, c pick.Card) { windows.OpenGrab(g, c) },
 		ShowHint:    windows.ShowHint,
@@ -191,6 +188,13 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 	go picker.Watch(nil)
 	windows.GreetOnStart()
 	return dsh, picker
+}
+
+func displayAt(sys desktop.Desktop) func(desktop.Point) mygo.Display {
+	return func(p desktop.Point) mygo.Display {
+		q := sys.ToDIP(p)
+		return mygo.Screen.DisplayNearestPoint(mygo.Point{X: int(q.X), Y: int(q.Y)})
+	}
 }
 
 // globalKeys registers shortcuts that work while another app has the
