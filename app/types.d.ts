@@ -11,6 +11,8 @@ type GrabImage = import('./bridge/mygo.ts').GrabImage
 type GrabElement = import('./bridge/mygo.ts').GrabElement
 type GrabMethod = import('./bridge/mygo.ts').GrabMethod
 type GrabNote = import('./bridge/mygo.ts').GrabNote
+type Message = import('./bridge/mygo.ts').Message
+type BlockReason = import('./bridge/mygo.ts').BlockReason
 type Grab = import('./bridge/mygo.ts').Grab & { mode?: undefined }
 
 interface PairCard { mode: 'pair'; code: string }
@@ -20,9 +22,11 @@ type PillState = import('./bridge/mygo.ts').PillState
 type KeepInfo = import('./bridge/mygo.ts').KeepInfo
 type PillItem = import('./bridge/mygo.ts').PillItem
 
-interface NoticeButton { id: string; label: string; primary?: boolean }
-type NoticeParagraph = string | { text: string; copy: string[] }
-interface NoticeInit { title: string; body: NoticeParagraph[]; buttons?: NoticeButton[] }
+// Go sends a notice's texts as messages; Electron still sends them worded.
+type NoticeText = string | Message
+interface NoticeButton { id: string; label: NoticeText; primary?: boolean }
+type NoticeParagraph = NoticeText | { text: NoticeText; copy: string[] }
+interface NoticeInit { title: NoticeText; body: NoticeParagraph[]; buttons?: NoticeButton[] }
 type IntroInit = import('./bridge/mygo.ts').IntroInit
 type LocalRect = import('./bridge/mygo.ts').LocalRect
 type OverlayHighlight = import('./bridge/mygo.ts').OverlayHighlight
@@ -86,7 +90,7 @@ interface OverlayApi {
   onHighlight(fn: (h: OverlayHighlight | null) => void): void
   onHold(fn: () => void): void
   onShift(fn: (d: { dx: number; dy: number }) => void): void
-  onNote(fn: (text: string) => void): void
+  onNote(fn: (note: Message) => void): void
 }
 interface Window {
   card: CardApi

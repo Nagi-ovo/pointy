@@ -1,8 +1,11 @@
-const $ = (id: string) => document.getElementById(id)!
+import { tm } from '../i18n/i18n.ts'
 
-function paragraph(text: string) {
+const $ = (id: string) => document.getElementById(id)!
+const word = (w: NoticeText) => (typeof w === 'string' ? w : tm(w))
+
+function paragraph(text: NoticeText) {
   const p = document.createElement('p')
-  String(text).split(/(\*\*[^*]+\*\*)/).forEach((part) => {
+  word(text).split(/(\*\*[^*]+\*\*)/).forEach((part) => {
     if (/^\*\*[^*]+\*\*$/.test(part)) {
       const b = document.createElement('b')
       b.textContent = part.slice(2, -2)
@@ -35,16 +38,16 @@ function copyRow(values: string[]) {
   return row
 }
 
-const item = (it: NoticeParagraph) => (typeof it === 'object' && it ? [paragraph(it.text ?? ''), copyRow(it.copy ?? [])] : [paragraph(it)])
+const item = (it: NoticeParagraph) => (typeof it === 'object' && 'copy' in it ? [paragraph(it.text), copyRow(it.copy ?? [])] : [paragraph(it)])
 
 window.notice.onInit((data) => {
   $('buttons').hidden = !data.buttons?.length
-  $('title').textContent = data.title ?? ''
+  $('title').textContent = word(data.title ?? '')
   $('body').replaceChildren(...(data.body ?? []).flatMap(item))
   $('buttons').replaceChildren(...(data.buttons ?? []).map((b) => {
     const el = document.createElement('button')
     el.className = b.primary ? 'b primary' : 'b'
-    el.textContent = b.label
+    el.textContent = word(b.label)
     el.addEventListener('click', () => window.notice.choose(b.id))
     return el
   }))

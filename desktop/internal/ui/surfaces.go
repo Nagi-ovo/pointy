@@ -6,11 +6,13 @@ import (
 	"encoding/json/jsontext"
 	"io/fs"
 	"slices"
+	"strconv"
 
 	"github.com/egoist/mygo"
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/desktop"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 )
 
 type kind int
@@ -151,7 +153,9 @@ func (u *UI) Start(d Deps) error {
 // open creates a window of kind k, hidden. Main thread only.
 func (u *UI) open(k kind, b mygo.Rectangle) *mygo.Window {
 	s := surfaces[k]
-	w := mygo.NewWindow(s.options(b, u.preload[s.page]))
+	// The page says its texts in the language Pointy shows when it opens.
+	preload := "window.pointyLocale = " + strconv.Quote(i18n.Locale()) + ";\n" + u.preload[s.page]
+	w := mygo.NewWindow(s.options(b, preload))
 	u.check("window-prepare", u.deps.Desktop.PrepareWindow(w))
 	if s.level != desktop.LevelFloating {
 		u.check("window-level", u.deps.Desktop.SetLevel(w, s.level))
@@ -235,7 +239,7 @@ var (
 	highlightEvent = mygo.NewEvent[*contract.OverlayHighlight]("highlight")
 	holdEvent      = mygo.NewEvent[struct{}]("hold")
 	shiftEvent     = mygo.NewEvent[contract.Shift]("shift")
-	noteEvent      = mygo.NewEvent[string]("note")
+	noteEvent      = mygo.NewEvent[contract.Message]("note")
 )
 
 func removeFrom[T comparable](list []T, x T) []T {

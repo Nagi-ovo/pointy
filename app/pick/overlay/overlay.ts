@@ -1,3 +1,5 @@
+import { t, tm } from '../../i18n/i18n.ts'
+
 const box = document.getElementById('box')!
 const what = document.getElementById('what')!
 const focus = document.getElementById('focus')!
@@ -17,15 +19,15 @@ window.overlay.onHighlight((h) => {
   by = h.y - 3
   Object.assign(box.style, { transform: `translate(${bx}px, ${by}px)`, width: `${h.width + 6}px`, height: `${h.height + 6}px`, opacity: '1' })
   if (!box.classList.contains('live')) { box.getBoundingClientRect(); box.classList.add('live') }
-  what.textContent = h.label
-  Object.assign(what.style, { display: h.label ? 'block' : 'none', left: `${h.x}px`, top: `${Math.max(0, h.y - 26)}px` })
+  what.textContent = h.name ? t('overlay.named', { control: tm(h.control), name: h.name }) : tm(h.control)
+  Object.assign(what.style, { display: 'block', left: `${h.x}px`, top: `${Math.max(0, h.y - 26)}px` })
 })
 
 
-window.overlay.onNote((text) => {
+window.overlay.onNote((note) => {
   const el = document.getElementById('note-hint')!
-  el.textContent = text ? `· ${text}` : ''
-  el.hidden = !text
+  el.textContent = `· ${tm(note)}`
+  el.hidden = false
 })
 
 window.overlay.onHold(() => {

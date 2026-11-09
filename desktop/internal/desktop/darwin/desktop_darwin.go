@@ -31,9 +31,9 @@ func New(assets string) *Desktop { return &Desktop{assets: assets} }
 
 var accessPrompted atomic.Bool
 
-// AccessHint shows the system's Accessibility prompt the first time it
+// HasAccess shows the system's Accessibility prompt the first time it
 // finds the grant missing.
-func (*Desktop) AccessHint() string {
+func (*Desktop) HasAccess() bool {
 	load()
 	trusted := false
 	withPool(func() {
@@ -42,11 +42,10 @@ func (*Desktop) AccessHint() string {
 		options := class("NSDictionary").Send(sel("dictionaryWithObject:forKey:"), value, objc.ID(kAXTrustedCheckOptionPrompt))
 		trusted = axIsProcessTrustedWithOptions(uintptr(options))
 	})
-	if trusted {
-		return ""
+	if !trusted {
+		accessPrompted.Store(true)
 	}
-	accessPrompted.Store(true)
-	return "要先允许 Pointy 使用辅助功能：系统设置 → 隐私与安全性 → 辅助功能"
+	return trusted
 }
 
 // AllowAnyForeground does nothing: an app Pointy opens comes forward on

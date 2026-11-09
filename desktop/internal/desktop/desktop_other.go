@@ -32,7 +32,7 @@ func (Unsupported) Cursor() Point                              { return Point{} 
 func (Unsupported) CursorVisible() bool                        { return true }
 func (Unsupported) ButtonDown() bool                           { return false }
 func (Unsupported) ElevatedUnderCursor() bool                  { return false }
-func (Unsupported) AccessHint() string                         { return "" }
+func (Unsupported) HasAccess() bool                            { return true }
 func (Unsupported) Browser(string) (BrowserKind, bool)         { return "", false }
 func (Unsupported) Blocked(string) bool                        { return false }
 func (Unsupported) HookButtons() (ButtonHook, error)           { return nil, errors.ErrUnsupported }

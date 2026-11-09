@@ -6,6 +6,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/pointylab/pointy/desktop/internal/agent"
 	"github.com/pointylab/pointy/desktop/internal/config"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 )
 
 func find(items []*mygo.MenuItem, label string) *mygo.MenuItem {
@@ -74,5 +75,33 @@ func TestTrayMenu(t *testing.T) {
 	}
 	if it := find(items, "关"); !it.Checked {
 		t.Fatal("off not checked after turning shake off")
+	}
+}
+
+func TestTraySaysTheLanguageChosenInIt(t *testing.T) {
+	settings := config.LoadSettings(t.TempDir())
+	system := []string{"zh-Hans-CN"}
+	t.Cleanup(func() { i18n.Use(i18n.Resolve("", system)) })
+	d := TrayDeps{Settings: settings, Visibility: NewVisibility(settings), Agent: func() agent.Status { return agent.Status{} }, Extensions: func() int { return 0 },
+		LocaleChanged: func() { i18n.Use(i18n.Resolve(settings.Get().Locale, system)) }}
+
+	_, items := trayContent(d)
+	if it := find(items, "跟随系统"); it == nil || !it.Checked {
+		t.Fatal("the system language is not the default")
+	}
+	click(find(items, "English"))
+	if settings.Get().Locale != "en" {
+		t.Fatalf("locale saved as %q", settings.Get().Locale)
+	}
+	tip, items := trayContent(d)
+	if tip != "Pointy\nDSH is not connected\nBrowser extension not connected" {
+		t.Fatalf("tooltip %q", tip)
+	}
+	if find(items, "Quit Pointy") == nil || find(items, "简体中文") == nil {
+		t.Fatal("menu not in English, or a language not named in itself")
+	}
+	click(find(items, "Same as System"))
+	if tip, _ := trayContent(d); settings.Get().Locale != "" || tip != "Pointy\nDSH 未连接\n浏览器扩展未连接" {
+		t.Fatalf("back to the system: %q %q", settings.Get().Locale, tip)
 	}
 }

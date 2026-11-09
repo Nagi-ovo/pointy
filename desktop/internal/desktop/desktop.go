@@ -112,9 +112,9 @@ type Desktop interface {
 	// ElevatedUnderCursor reports whether the window under the mouse runs
 	// with more rights than Pointy, which then cannot read it.
 	ElevatedUnderCursor() bool
-	// AccessHint is what the user must grant before Pointy can read other
-	// apps, or "".
-	AccessHint() string
+	// HasAccess reports whether the user granted what Pointy needs to read
+	// other apps.
+	HasAccess() bool
 	// Browser reports whether exe, as Foreground names it, is a browser
 	// the extension runs in.
 	Browser(exe string) (BrowserKind, bool)

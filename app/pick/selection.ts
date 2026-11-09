@@ -5,14 +5,14 @@ const { BROWSERS, foreground } = os
 
 const BLOCKED_TITLE = /密码|口令|password|passcode|登录|登陆|sign[ -]?in|log[ -]?in|网上银行|网银|online banking|支付宝|alipay/i
 
-export function blockedReason(fg: Foreground) {
-  if (os.BLOCKED_APPS.has(fg.exe)) return `${fg.exe} 在黑名单里`
-  if (BLOCKED_TITLE.test(fg.title)) return '窗口像是登录或密码页面'
+export function blockedReason(fg: Foreground): BlockReason | undefined {
+  if (os.BLOCKED_APPS.has(fg.exe)) return 'blocked-app'
+  if (BLOCKED_TITLE.test(fg.title)) return 'login-window'
   return undefined
 }
 
 export interface ExtensionSelection {
-  blocked?: string
+  blocked?: BlockReason
   text?: string
   url?: string
   pageTitle?: string
@@ -84,7 +84,7 @@ export async function grabSelection(): Promise<Grab> {
   const blocked = blockedReason(fg)
   if (blocked) return { source, blocked, method: 'none' }
   const u = await uia.grab()
-  if (u?.isPassword) return { source, blocked: '焦点在密码框里', method: 'uia' }
+  if (u?.isPassword) return { source, blocked: 'password-field', method: 'uia' }
   if (u?.ok && u.text?.trim()) return { source, method: 'uia', text: u.text }
   return { source, method: 'none', text: '' }
 }

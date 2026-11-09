@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/desktop"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 )
 
 // Pointing at a control in another app runs as one state machine:
@@ -52,20 +53,6 @@ const (
 	phaseConfirming
 	phaseHeld
 )
-
-var controlLabels = map[string]string{
-	"ControlType.Document": "文档", "ControlType.Edit": "输入框", "ControlType.Text": "文字", "ControlType.List": "列表",
-	"ControlType.ListItem": "列表项", "ControlType.Button": "按钮", "ControlType.Pane": "面板", "ControlType.Window": "窗口",
-	"ControlType.Group": "分组", "ControlType.DataItem": "数据行", "ControlType.TreeItem": "树节点", "ControlType.Hyperlink": "链接",
-	"ControlType.Image": "图片", "ControlType.Table": "表格", "ControlType.Custom": "控件", "ControlType.MenuItem": "菜单项",
-}
-
-func controlLabel(t string) string {
-	if l, ok := controlLabels[t]; ok {
-		return l
-	}
-	return "控件"
-}
 
 // Held keeps a pick's box drawn above the window it was made in until the
 // card it opened lets it go, or holdMax passes.
@@ -135,7 +122,7 @@ type session struct {
 
 // pointNative lets the user point at a control and returns it read, held
 // on screen; nil means the user backed out or nothing was there.
-func pointNative(ctx context.Context, d Deps, note string) (*nativePick, error) {
+func pointNative(ctx context.Context, d Deps, note contract.Message) (*nativePick, error) {
 	at := d.Desktop.Cursor()
 	hook, err := d.Desktop.HookButtons()
 	if err != nil {
@@ -144,7 +131,7 @@ func pointNative(ctx context.Context, d Deps, note string) (*nativePick, error) 
 	display := d.DisplayAt(at)
 	s := &session{d: d, display: display, scale: d.Desktop.UnitsPerDIP(at), at: at, zoom: 1, hook: hook}
 	s.overlay = d.OpenOverlay(display.Bounds)
-	if note != "" {
+	if note.Key != "" {
 		s.overlay.Note(note)
 	}
 	return s.run(ctx)
@@ -309,11 +296,7 @@ func (s *session) draw() {
 		s.overlay.Highlight(nil)
 		return
 	}
-	label := controlLabel(c.Control)
-	if c.Name != "" {
-		label += "：" + c.Name
-	}
-	h := &contract.OverlayHighlight{LocalRect: s.local(c.rect), Label: label}
+	h := &contract.OverlayHighlight{LocalRect: s.local(c.rect), Control: i18n.Msg(i18n.Control(c.Control)), Name: c.Name}
 	focused := false
 	if c.opaque {
 		if f, ok := focusRect(c.rect, s.at, s.scale, s.zoom); ok {
