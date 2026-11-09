@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "lib": ["es2023"],
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "../build/app"
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["card/card.ts", "card/markdown.ts", "pill/pill.ts", "notice/notice.ts", "intro/intro.ts", "pick/overlay/overlay.ts"]
+}

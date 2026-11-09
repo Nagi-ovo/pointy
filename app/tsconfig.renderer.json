@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": [],
+    "rootDir": ".",
+    "outDir": "../build/app"
+  },
+  "files": ["types.d.ts", "card/card.ts", "card/markdown.ts", "pill/pill.ts", "notice/notice.ts", "intro/intro.ts", "pick/overlay/overlay.ts"]
+}
