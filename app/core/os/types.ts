@@ -1,7 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
 import type { BrowserWindow, Display, Point, Rectangle } from 'electron'
-import type * as Darwin from './darwin.ts'
 import type * as Win32 from './win32.ts'
 
 declare const pointerBrand: unique symbol
@@ -53,4 +52,4 @@ export interface Os {
 }
 
 type Implements<T extends Os> = T
-export type PlatformModules = [Implements<typeof Darwin>, Implements<typeof Win32>]
+export type PlatformModules = [Implements<typeof Win32>]

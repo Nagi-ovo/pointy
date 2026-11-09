@@ -1,4 +1,4 @@
-import { app, Menu, Notification, Tray, nativeImage } from 'electron'
+import { app, Menu, Tray, nativeImage } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
 import { TRAY_ICON, settings, saveSettings, logError } from '../core/env.ts'
 import { suppressed, visibilityChanged } from '../core/state.ts'
@@ -50,29 +50,13 @@ export function update() {
 
 export function notify(title: string, content: string, onClick?: () => void) {
   if (!tray || suppressed()) return
-  if (process.platform === 'darwin') {
-    // macOS 没有托盘气泡，走系统通知
-    const n = new Notification({ title, body: content, silent: true })
-    n.on('click', () => onClick?.())
-    n.show()
-    return
-  }
   notifyClick = onClick
   try { tray.displayBalloon({ title, content, iconType: 'none', icon: nativeImage.createFromPath(TRAY_ICON), noSound: true }) } catch (err) { logError('balloon', err) }
 }
 
-// macOS 菜单栏图标是 18 点高
-function trayImage() {
-  if (process.platform !== 'darwin') return nativeImage.createFromPath(TRAY_ICON)
-  const big = nativeImage.createFromPath(TRAY_ICON.replace(/\.png$/, '@2x.png')).resize({ width: 36, height: 36, quality: 'best' })
-  const img = nativeImage.createEmpty()
-  img.addRepresentation({ scaleFactor: 2, width: 36, height: 36, buffer: big.toPNG() })
-  return img
-}
-
 export function create(d: TrayDeps) {
   deps = d
-  tray = new Tray(trayImage())
+  tray = new Tray(nativeImage.createFromPath(TRAY_ICON))
   tray.on('balloon-click', () => { const f = notifyClick; notifyClick = undefined; f?.() })
   update()
 }
