@@ -64,15 +64,16 @@ const (
 var shellClasses = map[string]bool{"Progman": true, "WorkerW": true, "Shell_TrayWnd": true, "Shell_SecondaryTrayWnd": true}
 
 // fullscreen decides from SHQueryUserNotificationState and the foreground
-// window. QUNS_BUSY does not count: any topmost window that fills a
+// window, unless skipFg: it is Pointy's own or could not be read.
+// QUNS_BUSY does not count: any topmost window that fills a
 // display sets it, such as a screen recorder's mask; an app the user
 // watches in full screen is the foreground window, which the second test
 // catches, and borderless games often report no full-screen state at all.
-func fullscreen(state int32, fgClass string, fg, monitor desktop.Rect, fgIsOwn bool) bool {
+func fullscreen(state int32, fgClass string, fg, monitor desktop.Rect, skipFg bool) bool {
 	if state == qunsRunningD3DFullScreen || state == qunsPresentationMode {
 		return true
 	}
-	if fgIsOwn || shellClasses[fgClass] {
+	if skipFg || shellClasses[fgClass] {
 		return false
 	}
 	return fg[0] <= monitor[0] && fg[1] <= monitor[1] && fg[0]+fg[2] >= monitor[0]+monitor[2] && fg[1]+fg[3] >= monitor[1]+monitor[3]
