@@ -8,7 +8,7 @@
   "scripts": {
     "build": "node tools/build.ts",
     "start": "node tools/build.ts && electron .",
-    "check": "node tools/build.ts && node --test 'test/*.test.ts'",
+    "check": "node tools/build.ts && node --test \"test/*.test.ts\"",
     "fake": "node tools/fake-plugin.ts"
   },
   "dependencies": {
