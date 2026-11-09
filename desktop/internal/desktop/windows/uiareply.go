@@ -7,6 +7,7 @@ package windows
 import (
 	"regexp"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/pointylab/pointy/desktop/internal/desktop"
@@ -104,15 +105,24 @@ func clip(s string, n int) string {
 
 // documentText picks what a text control shows: all of it when short, else
 // the part on screen (a terminal's buffer starts long before what the user
-// sees), else its start.
+// sees), else its start. doc was read with a limit of maxText+1 UTF-16
+// units, which UIA counts in.
 func documentText(doc string, visible func() string) string {
-	if utf8.RuneCountInString(doc) <= maxText {
+	if utf16Len(doc) <= maxText {
 		return doc
 	}
 	if v := visible(); strings.TrimSpace(v) != "" {
 		return v
 	}
 	return clip(doc, maxText)
+}
+
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n += utf16.RuneLen(r)
+	}
+	return n
 }
 
 var webURL = regexp.MustCompile(`^https?://`)
