@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo"
 	_ "github.com/egoist/mygo/plugins/automation"
 	"github.com/pointylab/pointy/desktop/internal/contract"
+	"github.com/pointylab/pointy/desktop/internal/ui"
 )
 
 // E2E opens Pointy's windows on request, for tests driving the app through
@@ -22,6 +23,23 @@ func (E2E) ShowWelcome()             { go windows.ShowWelcome() }
 func (E2E) ShowExtensionGuide()      { go windows.ShowExtensionGuide() }
 func (E2E) ShowNotice(n contract.NoticeInit, ms int) {
 	windows.ShowNotice(n, time.Duration(ms)*time.Millisecond)
+}
+
+var e2eOverlays []*ui.Overlay
+
+// Overlay covers the display holding x, y with a pointing overlay and
+// returns the bounds it asked for, to compare with where it lands.
+func (E2E) Overlay(x, y int) mygo.Rectangle {
+	b := mygo.Screen.DisplayNearestPoint(mygo.Point{X: x, Y: y}).Bounds
+	e2eOverlays = append(e2eOverlays, windows.OpenOverlay(b))
+	return b
+}
+
+func (E2E) CloseOverlays() {
+	for _, o := range e2eOverlays {
+		o.Close()
+	}
+	e2eOverlays = nil
 }
 
 func init() {

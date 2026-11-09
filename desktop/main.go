@@ -19,6 +19,8 @@ import (
 	"github.com/pointylab/pointy/desktop/internal/browser"
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
+	"github.com/pointylab/pointy/desktop/internal/desktop"
+	"github.com/pointylab/pointy/desktop/internal/pick"
 	"github.com/pointylab/pointy/desktop/internal/server"
 	"github.com/pointylab/pointy/desktop/internal/ui"
 )
@@ -40,8 +42,14 @@ func main() {
 	mygo.SetFrontend(pages)
 	mygo.Bind(windows.Services()...)
 	var dsh *agent.DSH
-	mygo.App.WhenReady(func() { dsh = start(home, root, pages, logError) })
+	var picker *pick.Picker
+	sys := newDesktop(root)
+	mygo.App.WhenReady(func() { dsh, picker = start(home, root, pages, sys, logError) })
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
+		if picker != nil {
+			picker.Cancel()
+		}
+		sys.RestoreCursor()
 		if dsh != nil {
 			dsh.WillQuit()
 		}
@@ -52,7 +60,7 @@ func main() {
 	}
 }
 
-func start(home, root string, pages fs.FS, logError func(string, any)) *agent.DSH {
+func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(string, any)) (*agent.DSH, *pick.Picker) {
 	// The port is the single-instance lock: a second Pointy on it exits.
 	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(config.Port())))
 	if err != nil {
@@ -60,15 +68,14 @@ func start(home, root string, pages fs.FS, logError func(string, any)) *agent.DS
 			logError("server", err)
 		}
 		mygo.App.Exit(0)
-		return nil
+		return nil, nil
 	}
 	token, err := config.Token(home)
 	if err != nil {
 		logError("token", err)
 		mygo.App.Exit(1)
-		return nil
+		return nil, nil
 	}
-	sys := newDesktop(root)
 	settings := config.LoadSettings(home)
 	vis := ui.NewVisibility(settings)
 
@@ -155,8 +162,51 @@ func start(home, root string, pages fs.FS, logError func(string, any)) *agent.DS
 			vis.SetFullscreen(err == nil && on)
 		}
 	}()
+	picker := pick.New(pick.Deps{
+		Desktop:     sys,
+		Settings:    settings,
+		Fullscreen:  vis.Fullscreen,
+		Suppressed:  vis.Suppressed,
+		Browser:     exts,
+		OpenOverlay: func(b mygo.Rectangle) pick.Overlay { return windows.OpenOverlay(b) },
+		DisplayAt: func(p desktop.Point) mygo.Display {
+			q := sys.ToDIP(p)
+			return mygo.Screen.DisplayNearestPoint(mygo.Point{X: int(q.X), Y: int(q.Y)})
+		},
+		Keys:        globalKeys(logError),
+		OpenGrab:    func(g contract.Grab, c pick.Card) { windows.OpenGrab(g, c) },
+		ShowHint:    windows.ShowHint,
+		CardFocused: windows.CardFocused,
+		Log:         logError,
+	})
+	vis.OnChange(func(hidden bool) {
+		if hidden {
+			picker.Cancel()
+		}
+	})
+	go picker.Watch(nil)
 	windows.GreetOnStart()
-	return dsh
+	return dsh, picker
+}
+
+// globalKeys registers shortcuts that work while another app has the
+// keyboard, and returns what unregisters them.
+func globalKeys(logError func(string, any)) func(map[string]func()) func() {
+	return func(keys map[string]func()) func() {
+		var done []string
+		for acc, fn := range keys {
+			if err := mygo.GlobalShortcut.Register(acc, fn); err != nil {
+				logError("shortcut", err)
+				continue
+			}
+			done = append(done, acc)
+		}
+		return func() {
+			for _, acc := range done {
+				mygo.GlobalShortcut.Unregister(acc)
+			}
+		}
+	}
 }
 
 // installedVersion is the version of the plugin Pointy came with, or the
