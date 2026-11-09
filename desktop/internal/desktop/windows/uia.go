@@ -77,6 +77,12 @@ const (
 // com is a COM interface pointer.
 type com struct{ vtbl *[128]uintptr }
 
+// The methods taking pointers as uintptr are go:uintptrescapes, as
+// LazyProc.Call is: a pointer converted in their argument list moves its
+// target to the heap, where a growing stack cannot move it while COM
+// writes through it.
+
+//go:uintptrescapes
 func (o *com) call(slot int, args ...uintptr) error {
 	hr, _, _ := syscall.SyscallN(o.vtbl[slot], append([]uintptr{uintptr(unsafe.Pointer(o))}, args...)...)
 	if int32(hr) < 0 {
@@ -86,9 +92,22 @@ func (o *com) call(slot int, args ...uintptr) error {
 }
 
 // out calls a method whose last argument receives an interface pointer.
+//
+//go:uintptrescapes
 func (o *com) out(slot int, args ...uintptr) *com {
 	var r *com
-	if o.call(slot, append(args, uintptr(unsafe.Pointer(&r)))...) != nil {
+	var err error
+	switch len(args) {
+	case 0:
+		err = o.call(slot, uintptr(unsafe.Pointer(&r)))
+	case 1:
+		err = o.call(slot, args[0], uintptr(unsafe.Pointer(&r)))
+	case 2:
+		err = o.call(slot, args[0], args[1], uintptr(unsafe.Pointer(&r)))
+	default:
+		panic("windows: out takes up to two arguments")
+	}
+	if err != nil {
 		return nil
 	}
 	return r
@@ -490,16 +509,23 @@ func uiaCall[T any](ctx context.Context, c *uiaClient, fn func(*uia) T) (T, erro
 	if err := ctx.Err(); err != nil {
 		return zero, err
 	}
-	w, err := c.worker()
-	if err != nil {
-		return zero, err
-	}
 	out := make(chan T, 1)
-	select {
-	case w.calls <- func(u *uia) { out <- fn(u) }:
-	case <-ctx.Done():
-		c.abandon(w)
-		return zero, ctx.Err()
+	call := func(u *uia) { out <- fn(u) }
+	var w *uiaWorker
+	for sent := false; !sent; {
+		var err error
+		if w, err = c.worker(); err != nil {
+			return zero, err
+		}
+		select {
+		case w.calls <- call:
+			sent = true
+		case <-w.quit:
+			// Another command gave up on this worker; take the next one.
+		case <-ctx.Done():
+			c.abandon(w)
+			return zero, ctx.Err()
+		}
 	}
 	select {
 	case v := <-out:

@@ -5,7 +5,9 @@ package main
 // what it can observe, writes one line per check to <file> and screenshots
 // beside it, and exits 1 if any check failed. CI runs it on Windows with
 // Notepad in front (.github/workflows/desktop-test.yml);
-// POINTY_SELFCHECK_TEXT is the text Notepad shows.
+// POINTY_SELFCHECK_TEXT is the text Notepad shows, and
+// POINTY_SELFCHECK_WAIT the seconds to wait first, for a person to bring
+// an app to the front.
 
 import (
 	"context"
@@ -17,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -102,6 +105,9 @@ func selfCheck(out string) {
 	mygo.App.OnWindowAllClosed(func() {})
 	mygo.App.WhenReady(func() {
 		go func() {
+			if wait, err := strconv.Atoi(os.Getenv("POINTY_SELFCHECK_WAIT")); err == nil {
+				time.Sleep(time.Duration(wait) * time.Second)
+			}
 			r := &report{dir: filepath.Dir(out)}
 			runChecks(r, newDesktop(resourceRoot()), newSelfDriver())
 			text := strings.Join(r.lines, "\n") + fmt.Sprintf("\n\n%d failed\n", r.fails)
