@@ -16,10 +16,11 @@ import (
 // windows that never take the keyboard go through the NSWindow itself.
 
 const (
-	nsFloatingWindowLevel    = 3
-	nsScreenSaverWindowLevel = 1000
-	nsWindowAbove            = 1
-	restackPoll              = 100 * time.Millisecond
+	nsFloatingWindowLevel       = 3
+	nsScreenSaverWindowLevel    = 1000
+	nsWindowAbove               = 1
+	nsWindowStyleMaskBorderless = 0
+	restackPoll                 = 100 * time.Millisecond
 )
 
 func nsWindow(w *mygo.Window) objc.ID { return objc.ID(w.NativeHandle()) }
@@ -34,12 +35,23 @@ func (*Desktop) WindowID(w *mygo.Window) desktop.WindowID {
 	return id
 }
 
+// SetLevel also makes a screen-saver window borderless. mygo's frameless
+// windows are titled windows without a title bar, and AppKit keeps a titled
+// window below the menu bar, which put the pointing overlay one menu bar too
+// low. AppKit already moved it when mygo made it, so its bounds must be set
+// again.
 func (*Desktop) SetLevel(w *mygo.Window, l desktop.Level) error {
 	level := nsFloatingWindowLevel
 	if l == desktop.LevelScreenSaver {
 		level = nsScreenSaverWindowLevel
 	}
-	mygo.RunOnMain(func() { nsWindow(w).Send(sel("setLevel:"), level) })
+	mygo.RunOnMain(func() {
+		h := nsWindow(w)
+		if l == desktop.LevelScreenSaver {
+			h.Send(sel("setStyleMask:"), nsWindowStyleMaskBorderless)
+		}
+		h.Send(sel("setLevel:"), level)
+	})
 	return nil
 }
 
