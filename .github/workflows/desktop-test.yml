@@ -1,0 +1,81 @@
+name: Desktop test
+
+on:
+  pull_request:
+    paths:
+      - desktop/**
+      - assets/cursor/**
+      - .github/workflows/desktop-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - name: Vet amd64 and arm64
+        run: |
+          go vet ./...
+          $env:GOARCH = 'arm64'
+          go vet ./...
+      - name: Unit tests
+        run: go test ./...
+      - name: Build amd64 and arm64
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go build -trimpath -ldflags "-H windowsgui" -o out/Pointy.exe .
+          $env:GOARCH = 'arm64'
+          go build -trimpath -ldflags "-H windowsgui" -o out/Pointy-arm64.exe .
+      - name: Self-check against Notepad
+        run: |
+          $out = Join-Path $PWD 'out/selfcheck.txt'
+          $text = 'Pointy self-check reads this line through UI Automation.'
+          $file = Join-Path $env:RUNNER_TEMP 'pointy-selfcheck.txt'
+          Set-Content -LiteralPath $file -Value $text -Encoding utf8
+          $notepad = Start-Process notepad.exe -ArgumentList "`"$file`"" -PassThru
+          Start-Sleep -Seconds 3
+          (New-Object -ComObject WScript.Shell).AppActivate($notepad.Id) | Out-Null
+          Start-Sleep -Seconds 1
+
+          $env:POINTY_SELFCHECK = $out
+          $env:POINTY_SELFCHECK_TEXT = $text
+          $env:POINTY_ROOT = (Resolve-Path ..).Path
+          $pointy = Start-Process out/Pointy.exe -PassThru
+          $null = $pointy.Handle
+          if (-not $pointy.WaitForExit(180000)) {
+            $pointy.Kill()
+            Add-Content -LiteralPath $out 'FAIL self-check: timed out after 180 s'
+          }
+
+          Start-Sleep -Seconds 15
+          $line = Select-String -LiteralPath $out -Pattern '^INFO cleanup dir: (.+)$' | Select-Object -First 1
+          if ($line) {
+            $dir = $line.Matches[0].Groups[1].Value
+            if (Test-Path -LiteralPath $dir) {
+              Add-Content -LiteralPath $out "FAIL cleanup after exit: $dir is still there"
+            } else {
+              Add-Content -LiteralPath $out "PASS cleanup after exit: $dir is gone"
+            }
+          }
+          Stop-Process -Id $notepad.Id -ErrorAction SilentlyContinue
+
+          Get-Content -LiteralPath $out
+          if ($pointy.ExitCode -ne 0 -or (Select-String -LiteralPath $out -Pattern '^FAIL' -Quiet)) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pointy-desktop-windows
+          path: desktop/out/
