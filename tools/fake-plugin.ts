@@ -1,5 +1,5 @@
 // 不开 DSH 也能测Pointy：冒充 pointy-bridge 连上来，按顺序推一遍状态和一次批准
-// 用法：node tools/fake-plugin.mjs [间隔毫秒]
+// 用法：node tools/fake-plugin.ts [间隔毫秒]
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -8,15 +8,23 @@ import WebSocket from 'ws'
 
 const token = fs.readFileSync(path.join(os.homedir(), '.pointy', 'token'), 'utf8').trim()
 const gap = Number(process.argv[2]) || 2500
-const hmac = (d) => crypto.createHmac('sha256', token).update(d).digest('hex')
+const hmac = (d: string) => crypto.createHmac('sha256', token).update(d).digest('hex')
 const nonce = crypto.randomBytes(16).toString('hex')
 const ws = new WebSocket(`ws://127.0.0.1:${process.env.POINTY_PORT || 47321}`)
-const send = (m) => ws.send(JSON.stringify(m))
-const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+const send = (m: object) => ws.send(JSON.stringify(m))
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const sid = 'session-fake'
 
+/** 宠物发给插件的消息，这里只看用到的字段 */
+type PetMessage =
+  | { type: 'challenge', nonce: string }
+  | { type: 'hello-ok', proof: string }
+  | { type: 'line-request', reqId: string, state: string }
+  | { type: 'approve', id: string, decision: string }
+  | { type: 'files', paths: string[] }
+
 ws.on('message', async (raw) => {
-  const msg = JSON.parse(String(raw))
+  const msg: PetMessage = JSON.parse(String(raw))
   if (msg.type === 'challenge') return send({ type: 'hello', v: 1, nonce, proof: hmac(`plugin|${msg.nonce}`) })
   if (msg.type === 'hello-ok') {
     if (msg.proof !== hmac(`pet|${nonce}`)) throw new Error('pet proof mismatch')

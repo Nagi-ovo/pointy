@@ -8,5 +8,5 @@
     "rootDir": ".",
     "outDir": "../build/extension"
   },
-  "files": ["pick.ts"]
+  "files": ["pick.ts", "globals.d.ts"]
 }

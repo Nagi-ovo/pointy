@@ -9,16 +9,15 @@
   "repository": { "type": "git", "url": "git+https://github.com/pointylab/pointy.git", "directory": "plugin" },
   "bugs": "https://github.com/pointylab/pointy/issues",
   "type": "module",
-  "main": "src/node.js",
+  "main": "build/src/node.js",
   "exports": {
-    ".": "./src/node.js",
-    "./client": "./lib/client.js",
+    ".": "./build/src/node.js",
+    "./client": "./build/lib/client.js",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
   "files": [
-    "src",
-    "lib",
+    "build",
     "pet",
     "cordis.patch.yml",
     "ASSETS.md",

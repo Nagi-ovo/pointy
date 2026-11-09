@@ -14,7 +14,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const PET_APP_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'pet')
+// Compiled to build/src/runtime.js; pet/ sits next to build/ in the package.
+export const PET_APP_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'pet')
 const RUNTIME_DIR = path.join(os.homedir(), '.pointy', 'runtime')
 
 // npmmirror first: GitHub release downloads are often slow or blocked in mainland China.
@@ -25,8 +26,21 @@ const MIRRORS = [
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000
 const TARGET = `${process.platform}-${process.arch}`
 
-/** `{ version, sha256 }` of this platform's Electron zip pinned by tools/pack-plugin.mjs, or undefined (dev checkout, unsupported platform). */
-export function pinnedRuntime(target = TARGET) {
+export type Logger = Pick<Console, 'info' | 'warn'>
+/** This platform's Electron zip as pinned in pet/package.json. */
+interface Pin { version: string, sha256: string }
+/** How one platform's runtime is laid out, unpacked and branded. */
+interface Target {
+  /** Executables inside the runtime dir, branded first. */
+  exes: string[]
+  /** The file that proves the zip unpacked. */
+  stock: string
+  unzip(zip: string, dir: string): Promise<void>
+  brand(dir: string, zip: string, logger: Logger): Promise<void>
+}
+
+/** This platform's Electron zip pinned by tools/pack-plugin.ts, or undefined (dev checkout, unsupported platform). */
+export function pinnedRuntime(target = TARGET): Pin | undefined {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(PET_APP_DIR, 'package.json'), 'utf8'))
     const { version, sha256 } = pkg.pointy?.electron ?? {}
@@ -36,17 +50,17 @@ export function pinnedRuntime(target = TARGET) {
   return undefined
 }
 
-const zipName = (version) => `electron-v${version}-${TARGET}.zip`
-const runtimeDir = (version) => path.join(RUNTIME_DIR, `electron-v${version}-${TARGET}`)
+const zipName = (version: string) => `electron-v${version}-${TARGET}.zip`
+const runtimeDir = (version: string) => path.join(RUNTIME_DIR, `electron-v${version}-${TARGET}`)
 
 /** The executable of the pinned runtime if it is already unpacked: the branded one, else the stock fallback. */
-export function installedRuntime(pin = pinnedRuntime()) {
+export function installedRuntime(pin = pinnedRuntime()): string | undefined {
   const target = TARGETS[TARGET]
   if (!pin || !target) return undefined
   return target.exes.map((exe) => path.join(runtimeDir(pin.version), exe)).find((exe) => fs.existsSync(exe))
 }
 
-async function download(url, file, logger) {
+async function download(url: string, file: string, logger: Logger) {
   const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
   const total = Number(res.headers.get('content-length')) || 0
@@ -58,20 +72,20 @@ async function download(url, file, logger) {
     for await (const chunk of res.body) {
       hash.update(chunk)
       got += chunk.length
-      if (!out.write(chunk)) await new Promise((r) => out.once('drain', r))
+      if (!out.write(chunk)) await new Promise<void>((r) => out.once('drain', r))
       if (total && got / total >= nextLog) {
         logger.info(`pointy: downloading Electron ${Math.round((got / total) * 100)}%`)
         nextLog += 0.25
       }
     }
   } finally {
-    await new Promise((r) => out.end(r))
+    await new Promise<void>((r) => out.end(r))
   }
   return hash.digest('hex')
 }
 
-function run(file, args) {
-  return new Promise((resolve, reject) => {
+function run(file: string, args: string[]) {
+  return new Promise<void>((resolve, reject) => {
     const child = spawn(file, args, { stdio: 'ignore', windowsHide: true })
     child.on('error', reject)
     child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${path.basename(file)} exited with ${code}`))))
@@ -85,7 +99,7 @@ function run(file, args) {
  * dropped; Windows does not check signatures of programs started by another
  * program. If the resource edit fails, the renamed stock binary still runs.
  */
-async function brandWindows(dir, zip, logger) {
+async function brandWindows(dir: string, zip: string, logger: Logger) {
   const from = path.join(dir, 'electron.exe')
   const to = path.join(dir, 'Pointy.exe')
   try {
@@ -109,13 +123,13 @@ async function brandWindows(dir, zip, logger) {
     fs.writeFileSync(to, Buffer.from(exe.generate()))
     fs.rmSync(from)
   } catch (error) {
-    logger.warn(`pointy: could not rebrand electron.exe (${error.message}); using it renamed`)
+    logger.warn(`pointy: could not rebrand electron.exe (${(error as Error).message}); using it renamed`)
     fs.rmSync(to, { force: true })
     fs.renameSync(from, to)
   }
 }
 
-const plist = (file, key, type, value) => run('/usr/bin/plutil', ['-replace', key, type, value, file])
+const plist = (file: string, key: string, type: string, value: string) => run('/usr/bin/plutil', ['-replace', key, type, value, file])
 
 /**
  * Turn Electron.app into Pointy.app: the Accessibility and Screen Recording
@@ -125,7 +139,7 @@ const plist = (file, key, type, value) => run('/usr/bin/plutil', ['-replace', ke
  * fetch, not a browser, so it carries no quarantine flag for Gatekeeper to check.
  * If any step fails, the bundle is unpacked again and the stock Electron.app is used.
  */
-async function brandMac(dir, zip, logger) {
+async function brandMac(dir: string, zip: string, logger: Logger) {
   const app = path.join(dir, 'Pointy.app')
   const contents = path.join(app, 'Contents')
   try {
@@ -142,39 +156,35 @@ async function brandMac(dir, zip, logger) {
     }
     await run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', app])
   } catch (error) {
-    logger.warn(`pointy: could not rebrand Electron.app (${error.message}); using it as is`)
+    logger.warn(`pointy: could not rebrand Electron.app (${(error as Error).message}); using it as is`)
     for (const name of fs.readdirSync(dir)) fs.rmSync(path.join(dir, name), { recursive: true, force: true })
     await unzipMac(zip, dir)
   }
 }
 
 // Windows 10+ ships bsdtar, which reads zip archives.
-const unzipWindows = (zip, dir) => run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', zip, '-C', dir])
+const unzipWindows = (zip: string, dir: string) => run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', zip, '-C', dir])
 // ditto keeps the symlinks inside Electron Framework.framework, which a plain unzip would flatten.
-const unzipMac = (zip, dir) => run('/usr/bin/ditto', ['-x', '-k', zip, dir])
+const unzipMac = (zip: string, dir: string) => run('/usr/bin/ditto', ['-x', '-k', zip, dir])
 
-/**
- * Per platform: executables inside the runtime dir (branded first), the file
- * that proves the zip unpacked, and how to unpack and brand it.
- */
-const MAC = {
+const MAC: Target = {
   exes: ['Pointy.app/Contents/MacOS/Pointy', 'Electron.app/Contents/MacOS/Electron'],
   stock: 'Electron.app/Contents/MacOS/Electron',
   unzip: unzipMac,
   brand: brandMac,
 }
-const TARGETS = {
+const TARGETS: Record<string, Target | undefined> = {
   'win32-x64': { exes: ['Pointy.exe'], stock: 'electron.exe', unzip: unzipWindows, brand: brandWindows },
   'darwin-arm64': MAC,
   'darwin-x64': MAC,
 }
 
-let installing
+let installing: Promise<string | undefined> | undefined
 /**
  * Make sure the pinned Electron is unpacked; returns the path of its executable.
  * One download at a time per DSH run; older runtimes are removed afterwards.
  */
-export function ensureRuntime(logger) {
+export function ensureRuntime(logger: Logger): Promise<string | undefined> {
   const target = TARGETS[TARGET]
   if (!target) return Promise.reject(new Error(`Pointy supports Windows x64 and macOS (arm64, x64), not ${TARGET}`))
   const pin = pinnedRuntime()
@@ -185,7 +195,7 @@ export function ensureRuntime(logger) {
   return installing
 }
 
-async function install(pin, target, logger) {
+async function install(pin: Pin, target: Target, logger: Logger) {
   fs.mkdirSync(RUNTIME_DIR, { recursive: true })
   // Leftovers of a download that was cut off (DSH closed midway).
   for (const name of fs.readdirSync(RUNTIME_DIR)) {
@@ -195,7 +205,7 @@ async function install(pin, target, logger) {
   const tmp = fs.mkdtempSync(path.join(RUNTIME_DIR, 'tmp-'))
   try {
     const zip = path.join(tmp, zipName(pin.version))
-    let lastError
+    let lastError: unknown
     for (const mirror of MIRRORS) {
       const url = `${mirror}v${pin.version}/${zipName(pin.version)}`
       try {
@@ -206,7 +216,7 @@ async function install(pin, target, logger) {
         break
       } catch (error) {
         lastError = error
-        logger.warn(`pointy: ${url} failed: ${error.message}`)
+        logger.warn(`pointy: ${url} failed: ${(error as Error).message}`)
         fs.rmSync(zip, { force: true })
       }
     }
