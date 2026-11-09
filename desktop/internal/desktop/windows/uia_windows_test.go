@@ -139,3 +139,25 @@ func TestUIAMovesOnFromAHungCommand(t *testing.T) {
 		t.Errorf("the next command failed: %v", err)
 	}
 }
+
+// A command queued behind a hung one moves to the next worker once the
+// hung one's caller gives up, instead of waiting for the hung worker.
+func TestUIAQueuedCommandFollowsTheNewWorker(t *testing.T) {
+	var c uiaClient
+	hung := make(chan struct{})
+	go func() {
+		short, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		defer cancel()
+		uiaCall(short, &c, func(*uia) bool { close(hung); time.Sleep(3 * time.Second); return true })
+	}()
+	<-hung
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	if ok, err := uiaCall(ctx, &c, func(*uia) bool { return true }); err != nil || !ok {
+		t.Fatalf("the queued command failed after %v: %v", time.Since(start), err)
+	}
+	if waited := time.Since(start); waited > time.Second {
+		t.Errorf("the queued command waited %v for the hung worker", waited)
+	}
+}

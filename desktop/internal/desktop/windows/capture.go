@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -107,6 +108,10 @@ func CaptureScreen(r desktop.Rect) (image.Image, error) {
 	if w <= 0 || h <= 0 {
 		return nil, errors.New("windows: nothing to capture")
 	}
+	// ReleaseDC must run on the thread that called GetDC, and GDI batches
+	// its calls per thread.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	screen, _, _ := procGetDC.Call(0)
 	if screen == 0 {
 		return nil, errors.New("windows: GetDC failed")
