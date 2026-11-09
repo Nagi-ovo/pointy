@@ -1,9 +1,10 @@
 package main
 
 // POINTY_SELFCHECK=<file> starts Pointy in a mode that calls each Desktop
-// method once against the foreground app and its own test window, judges
-// what it can observe, writes one line per check to <file> and screenshots
-// beside it, and exits 1 if any check failed. CI runs it on Windows with
+// method once against the foreground app and its own test window, runs one
+// pick through internal/pick with a click to confirm it, judges what it
+// can observe, writes one line per check to <file> and screenshots beside
+// it, and exits 1 if any check failed. CI runs it on Windows with
 // Notepad in front (.github/workflows/desktop-test.yml);
 // POINTY_SELFCHECK_TEXT is the text Notepad shows, and
 // POINTY_SELFCHECK_WAIT the seconds to wait first, for a person to bring
@@ -173,6 +174,7 @@ func runChecks(r *report, d desktop.Desktop, drv selfDriver) {
 
 	checkCursor(r, d, drv)
 	checkHook(r, d, drv, fg, target)
+	checkPick(r, d, drv, fg, target)
 
 	d.AllowAnyForeground()
 	r.info("AllowAnyForeground", "called")
@@ -402,6 +404,14 @@ func checkHook(r *report, d desktop.Desktop, drv selfDriver, fg desktop.Foregrou
 	p.Y += float64(target[3]) / 8
 	drv.setSelection(fg.ID, 0, 0)
 	start, end, haveSel := drv.selection(fg.ID)
+	if err := drv.wheel(p, -120); err == nil {
+		select {
+		case got := <-h.Events():
+			r.check("hook leaves the wheel alone until SetWheel", false, "got %v", got)
+		case <-time.After(300 * time.Millisecond):
+			r.check("hook leaves the wheel alone until SetWheel", true, "no event")
+		}
+	}
 	h.SetWheel(true)
 	expect := func(name string, want desktop.Button, post func() error) {
 		if err := post(); err != nil {
@@ -425,7 +435,8 @@ func checkHook(r *report, d desktop.Desktop, drv selfDriver, fg desktop.Foregrou
 		r.check("hooked clicks never reach the target", s == start && e == end, "caret %d-%d, was %d-%d", s, e, start, end)
 	}
 	h.Close()
-	r.info("hook closed", "unhooked")
+	h.Close()
+	r.info("hook closed", "unhooked, twice")
 	if !haveSel {
 		r.skip("unhooked click", "the target has no edit control to read the caret from")
 		return
