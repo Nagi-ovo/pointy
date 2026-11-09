@@ -1,4 +1,3 @@
-// 卡片以外的小窗：右下角提示窗（首次引导、扩展配对、装扩展的步骤）、屏幕下方一句话提示、开场动画
 import { BrowserWindow, clipboard, ipcMain, screen } from 'electron'
 import type { IpcMainEvent } from 'electron'
 import path from 'node:path'
@@ -10,18 +9,14 @@ export interface NoticeDeps {
   extensionDir(): string
   syncExtension(): void
 }
-// init() 之前是空的
 let deps = {} as NoticeDeps
 export const init = (d: NoticeDeps) => { deps = d }
 
-// ---------- 右下角提示窗 ----------
-/** 用户点的按钮 id；关掉或超时是 null */
 type NoticeChoice = string | null
 let noticeWin: BrowserWindow | undefined
-let noticeDone: ((choice: NoticeChoice) => void) | undefined // 当前提示窗的回调：点了按钮 / 关掉 / 超时 / 被新的顶掉都走这里
+let noticeDone: ((choice: NoticeChoice) => void) | undefined
 const NOTICE_W = 380
 
-/** 右下角弹一个小窗，返回用户点的按钮 id；关掉或超时是 null。返回的 Promise 带 cancel()，只关这一个 */
 export function showNotice({ title, body, buttons, timeoutMs }: NoticeInit & { timeoutMs?: number }) {
   noticeDone?.(null)
   let cancel: (() => void) | undefined
@@ -65,12 +60,9 @@ ipcMain.on('notice-resize', (e, height: number) => {
   if (TEST_HIDDEN) { w.setPosition(-20000, -20000); w.showInactive() } else if (!w.isVisible()) w.showInactive()
 })
 
-/** 关掉当前提示窗（choice 当作用户点的）；没有提示窗时什么也不做 */
 export const closeNotice = (choice: NoticeChoice = null) => noticeDone?.(choice)
 export const noticeOpen = () => !!noticeWin
 
-// ---------- 屏幕正下方一句话 ----------
-// 样子同指认时的操作提示，几秒后自己消失
 let hintWin: BrowserWindow | undefined
 let hintTimer: NodeJS.Timeout | undefined
 export function showHint(text: string) {
@@ -95,12 +87,6 @@ export function showHint(text: string) {
   hintTimer = setTimeout(() => { if (hintWin && !hintWin.isDestroyed()) hintWin.hide() }, 2600)
 }
 
-// ---------- 引导 ----------
-/**
- * 浏览器扩展还不在商店里：一张卡片说完怎么"加载已解压的扩展程序"。
- * 地址和文件夹路径点了就复制，卡片不关；用户去浏览器操作时它一直留在右下角，
- * 扩展装好连上来时，配对的弹窗会顶掉它
- */
 export async function showExtensionGuide() {
   deps.syncExtension?.()
   const dir = deps.extensionDir?.()
@@ -116,10 +102,6 @@ export async function showExtensionGuide() {
   })
 }
 
-/**
- * 屏幕正中的开场动画（app/intro/）：鲸鱼光标晃几下，指认光环套住"晃一下鼠标，指哪问哪"。
- * 全屏透明、点击穿透、不抢焦点，放完自己关。返回放完的 Promise。
- */
 export function showIntro(version: string) {
   return new Promise<void>((resolve) => {
     const { bounds } = screen.getPrimaryDisplay()
@@ -150,7 +132,6 @@ export function showIntro(version: string) {
   })
 }
 
-/** 装好（第一次）或换了版本后第一次启动：放开场动画；第一次装接着弹完整说明。全屏、勿扰时不放 */
 export async function greetOnStart() {
   const version = installedVersion()
   if (settings.welcomed && settings.welcomedVersion === version) return
@@ -161,7 +142,6 @@ export async function greetOnStart() {
   if (first) await showWelcome()
 }
 
-/** 第一次运行：告诉用户怎么用，顺便推荐装扩展 */
 export async function showWelcome() {
   saveSettings({ welcomed: true, welcomedVersion: installedVersion() })
   const choice = await showNotice({

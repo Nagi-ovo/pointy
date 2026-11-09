@@ -1,8 +1,4 @@
-﻿# 常驻小进程：从 stdin 读一行命令，用 UI Automation 查一次，输出一行 JSON。只在被叫到时查，不监听任何东西。
-#   grab              焦点控件里选中的文字
-#   point X Y         坐标下的控件，以及往上几层祖先（高亮框用）
-#   element X Y UP    坐标下的控件往上 UP 层，取它的名字、值、文字（确认指认时用）
-# 坐标都是物理像素，所以先把自己设成按显示器感知 DPI
+﻿# 坐标都是物理像素，所以先把自己设成按显示器感知 DPI
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase
 Add-Type 'using System; using System.Runtime.InteropServices; public static class DshPetDpi { [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v); }'
 [DshPetDpi]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null
@@ -52,7 +48,6 @@ function Chain($x, $y, $depth) {
   return $out
 }
 
-# 判断"整个窗口只露出一个空壳"用：有没有子控件、有没有能读文字的接口、所在顶层窗口多大
 function HasKids($el) { return $null -ne $TreeWalker::ControlViewWalker.GetFirstChild($el) }
 function Readable($el) {
   $p = $null
@@ -69,7 +64,6 @@ function WindowRect($el) {
   return Rect $top
 }
 
-# 控件自身的文字：TextPattern 的整段文字，否则 ValuePattern，否则子孙控件的 Name 拼起来
 function TextOf($el) {
   $p = $null
   if ($el.TryGetCurrentPattern($TextPattern::Pattern, [ref]$p)) {
@@ -126,7 +120,6 @@ while ($true) {
         $result.chain = @($chain | ForEach-Object {
           @{ rect = (Rect $_); control = $_.Current.ControlType.ProgrammaticName; cls = $_.Current.ClassName; name = ($_.Current.Name -replace '\s+', ' ').Substring(0, [Math]::Min(60, ($_.Current.Name -replace '\s+', ' ').Length)) }
         })
-        # 最深那个控件：是不是空壳（没子控件、没文字接口），以及它所在窗口多大
         if ($chain.Count) {
           $result.leafKids = HasKids $chain[0]
           $result.leafReadable = Readable $chain[0]

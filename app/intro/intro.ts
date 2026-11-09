@@ -1,4 +1,3 @@
-// 开场动画：量出文字卡片的大小，光环弹到比它大一圈；放完通知 main.js 关窗
 const word = document.getElementById('word')!
 window.intro.onInit(({ version }) => {
   if (version) document.getElementById('sub')!.textContent = `Pointy ${version} 已就位`

@@ -1,4 +1,3 @@
-// 托盘：图标、悬停提示、菜单、气泡通知
 import { app, Menu, Notification, Tray, nativeImage } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
 import { TRAY_ICON, settings, saveSettings, logError } from '../core/env.ts'
@@ -14,7 +13,6 @@ export interface TrayDeps {
 
 let tray: Tray | undefined
 let notifyClick: (() => void) | undefined
-// create() 之前是空的
 let deps = {} as TrayDeps
 
 export function update() {
@@ -50,7 +48,6 @@ export function update() {
   ]))
 }
 
-/** 托盘气泡通知（收起的任务做完、agent 要批准都靠它） */
 export function notify(title: string, content: string, onClick?: () => void) {
   if (!tray || suppressed()) return
   if (process.platform === 'darwin') {
@@ -64,7 +61,7 @@ export function notify(title: string, content: string, onClick?: () => void) {
   try { tray.displayBalloon({ title, content, iconType: 'none', icon: nativeImage.createFromPath(TRAY_ICON), noSound: true }) } catch (err) { logError('balloon', err) }
 }
 
-/** macOS 菜单栏图标是 18 点高：拿 64 像素那张缩到 36 像素，当 2 倍图用 */
+// macOS 菜单栏图标是 18 点高
 function trayImage() {
   if (process.platform !== 'darwin') return nativeImage.createFromPath(TRAY_ICON)
   const big = nativeImage.createFromPath(TRAY_ICON.replace(/\.png$/, '@2x.png')).resize({ width: 36, height: 36, quality: 'best' })

@@ -1,20 +1,14 @@
-// 指认模式：只在Pointy叫的时候注入一次，选完、Esc 或右键就把自己拆掉。
-// 高亮光标下"有意义的一块"（一条评论、一张卡片、一段话、一张图……），点一下把它的内容交给Pointy。
 (() => {
-  // 上一次指认要是没收尾（Pointy那边超时、扩展重载过），先把它拆掉再开始，免得这一页从此晃不出来
   window.__pointyPickCleanup?.()
   window.__pointyPick = true
 
   const MAX_TEXT = 4000
 
-  // ---------- shadow DOM 工具 ----------
   const parentOf = (el: Element): Element | null => el.parentElement ?? (el.getRootNode() instanceof ShadowRoot ? (el.getRootNode() as ShadowRoot).host : null)
 
-  // 登录墙、半透明蒙层这类盖在内容上面的东西，指认时要穿过去
   const OVERLAY = /mask|overlay|wall|backdrop|curtain|scrim/i
   const isOverlay = (el: Element) => OVERLAY.test(el.id ?? '') || (typeof el.className === 'string' && OVERLAY.test(el.className))
 
-  /** 光标下最上面的一个"不是蒙层"的元素，穿过 shadow DOM */
   function topAt(root: Document | ShadowRoot, x: number, y: number, exclude?: Element) {
     return root.elementsFromPoint(x, y).find(el => el !== exclude && !isOverlay(el))
   }
@@ -29,7 +23,6 @@
     return el
   }
 
-  /** 走到的节点是元素或 shadow root；shadow root 上没有 shadowRoot、matches，下面都用可选链兜着 */
   function* deepWalk(root: Element | ShadowRoot): Generator<Element> {
     const stack: (Element | ShadowRoot)[] = [root]
     while (stack.length) {
@@ -55,7 +48,6 @@
       if (node.nodeType === Node.TEXT_NODE) { out += node.textContent; return }
       if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return
       if (SKIP.has(node.nodeName)) return
-      // 元素或 DocumentFragment；后者没有 shadowRoot
       const el = node as HTMLImageElement
       if (node.nodeType === Node.ELEMENT_NODE) {
         const style = getComputedStyle(el)
@@ -72,27 +64,25 @@
     return out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, MAX_TEXT)
   }
 
-  // ---------- 找"有意义的一块" ----------
   const SEMANTIC_TAG = /^(ARTICLE|LI|TR|PRE|BLOCKQUOTE|FIGURE|IMG|VIDEO|P|H[1-6]|TABLE|DETAILS|DIALOG)$/
   const SEMANTIC_CLASS = /comment|reply|card|item|post|feed|message|msg|tweet|issue|timeline|entry|thread|bubble|answer|review/i
 
   function isSemantic(el: Element) {
     if (SEMANTIC_TAG.test(el.tagName)) return true
-    if (el.tagName.includes('-') && /comment|reply|card|item|post|thread/i.test(el.tagName)) return true // web component
+    if (el.tagName.includes('-') && /comment|reply|card|item|post|thread/i.test(el.tagName)) return true
     const role = el.getAttribute?.('role')
     if (role && /article|listitem|row|comment|dialog/.test(role)) return true
     if (typeof el.className === 'string' && SEMANTIC_CLASS.test(el.className)) return true
     return [...(el.attributes ?? [])].some(a => /^data-.*(id|key)$/i.test(a.name))
   }
 
-  /** 从光标下的元素往上，收集一串候选块：最小的有意义块在前，整页在后 */
   function chainAt(x: number, y: number) {
     const chain: Element[] = []
     for (let el: Element | null | undefined = deepElementFromPoint(x, y); el && el !== document.documentElement; el = parentOf(el)) {
       if (el === document.body) break
       const r = el.getBoundingClientRect()
       if (r.width < 16 || r.height < 12) continue
-      if (r.width >= innerWidth * 0.98 && r.height >= innerHeight * 0.9) break // 快到整页了
+      if (r.width >= innerWidth * 0.98 && r.height >= innerHeight * 0.9) break
       if (isSemantic(el) || el.tagName === 'IMG' || el.tagName === 'VIDEO') chain.push(el)
     }
     if (!chain.length) {
@@ -102,8 +92,6 @@
     return chain
   }
 
-  // ---------- 站点适配器 ----------
-  /** 站点适配器认出来的东西，盖在 genericInfo 上面 */
   interface SiteInfo { site?: string, kind?: string, fields?: Record<string, string>, page?: Record<string, string> }
 
   const pickText = (root: Element, selector: string) => { const n = root && deepQuery(root, selector); return n ? deepText(n).slice(0, 300) : '' }
@@ -208,7 +196,6 @@
     }
   }
 
-  // ---------- 已有选区就直接用 ----------
   const existing = getSelection()?.toString().trim()
   if (existing) {
     const range = getSelection()!.getRangeAt(0)
@@ -220,14 +207,10 @@
     return
   }
 
-  // 上一次指认留着的高亮（卡片还开着）先撤掉
   window.__pointyHeld?.()
 
-  // ---------- 高亮层：浅蓝圆角描边 + 一圈淡光，跟着光标平滑移动 ----------
-  // 用 transform 移动（走合成层，不触发页面重排），缓动是先快后慢，跟手
   const box = document.createElement('div')
   const label = document.createElement('div')
-  // 170ms，落位时轻微过冲回弹（弹性调弱过一次），像被吸过去
   const EASE = '170ms cubic-bezier(0.34, 1.2, 0.64, 1)'
   Object.assign(box.style, {
     position: 'fixed', left: '0', top: '0', zIndex: 2147483647, pointerEvents: 'none', boxSizing: 'border-box',
@@ -236,7 +219,6 @@
     opacity: '0', willChange: 'transform, width, height',
     transition: `transform ${EASE}, width ${EASE}, height ${EASE}, opacity 120ms ease-out`,
   })
-  // 页面正下方一个"右键或 Esc 退出"的小胶囊；放在 shadow DOM 里，不受网页样式影响
   Object.assign(label.style, { position: 'fixed', left: '0', top: '0', zIndex: 2147483647, pointerEvents: 'none' })
   label.attachShadow({ mode: 'open' }).innerHTML = `
     <style>
@@ -247,7 +229,6 @@
       .pill svg { width: 15px; height: 20px; }
     </style>
     <div class="pill"><svg viewBox="-1 -1 14 22"><path d="M0 0V17L4 13L7 20L10 18.7L7 12H12Z" fill="#fff"/></svg>右键 或 <kbd>Esc</kbd> 退出</div>`
-  // 指认期间光标换成鲸鱼娘扒着箭头的样子，热点在箭头尖；网页自己设的光标（链接的小手等）一律压住
   const cursorStyle = document.createElement('style')
   const cur = (n: number) => chrome.runtime.getURL(`cursor-${n}.png`)
   cursorStyle.textContent = `* { cursor: image-set(url("${cur(32)}") 1x, url("${cur(48)}") 1.5x, url("${cur(64)}") 2x) 0 8, default !important; }`
@@ -255,8 +236,7 @@
 
   let chain: Element[] = []
   let level = 0
-  let levelUp = 0 // 用户用 [ ] 往外扩了几级；鼠标移动时保持这个相对层级（滚轮留给页面滚动）
-  // Pointy告诉的光标屏幕坐标（物理像素），换算成页面坐标；算不准也没关系，鼠标一动就更新
+  let levelUp = 0
   const start = window.__pointyStart
   let lastPoint = start
     ? { x: start.x / devicePixelRatio - screenX - (outerWidth - innerWidth) / 2, y: start.y / devicePixelRatio - screenY - (outerHeight - innerHeight) }
@@ -268,7 +248,6 @@
     const el = current()
     if (!el) { box.style.opacity = '0'; shown = false; return }
     const r = el.getBoundingClientRect()
-    // 第一次出现直接放到位再淡入，不从左上角飞过来
     if (!shown) box.style.transition = 'opacity 120ms ease-out'
     Object.assign(box.style, { transform: `translate(${r.left - 3}px, ${r.top - 3}px)`, width: `${r.width + 6}px`, height: `${r.height + 6}px`, opacity: '1' })
     if (!shown) {
@@ -304,16 +283,12 @@
   const stale = () => cleanup()
   window.__pointyPickCleanup = stale
 
-  /**
-   * 选中之后高亮框留在那个元素上，直到卡片关掉（Pointy发 pick-release 过来）。
-   * 先藏起来等扩展截完图，扩展发 pick-hold 再显示；页面滚动时跟着元素走。
-   */
   function hold(el: Element) {
     const follow = () => {
       const r = el.getBoundingClientRect()
       Object.assign(box.style, { transform: `translate(${r.left - 3}px, ${r.top - 3}px)`, width: `${r.width + 6}px`, height: `${r.height + 6}px` })
     }
-    let holdId: string | undefined // 扩展在 pick-hold 里告诉这次指认的 id，只认同一个 id 的 pick-release
+    let holdId: string | undefined
     const onMsg = (msg: PickControlMessage | undefined) => {
       if (msg?.type === 'pick-hold') { holdId = msg.reqId; follow(); box.style.transition = 'opacity 120ms ease-out'; box.style.opacity = '1' }
       else if (msg?.type === 'pick-release' && msg.reqId === holdId) release()
@@ -326,7 +301,6 @@
       box.remove()
       if (window.__pointyHeld === release) window.__pointyHeld = undefined
     }
-    // 万一Pointy那边没通知，5 分钟后自己撤掉
     const expire = setTimeout(release, 5 * 60 * 1000)
     addEventListener('scroll', follow, true)
     addEventListener('resize', follow)
@@ -334,7 +308,6 @@
     window.__pointyHeld = release
   }
 
-  // 一帧最多算一次，鼠标甩得快也不卡
   let moveFrame = 0
   const onMove = (e: MouseEvent) => {
     lastPoint = { x: e.clientX, y: e.clientY }
@@ -345,7 +318,6 @@
     })
   }
   const swallow = (e: Event) => { e.preventDefault(); e.stopPropagation() }
-  // 右键按下就取消；紧跟着的那一次右键菜单吃掉（之后右键照常）
   function onMouseDown(e: MouseEvent) {
     swallow(e)
     if (e.button !== 2) return
@@ -371,17 +343,14 @@
     cleanup()
     chrome.runtime.sendMessage<PickResultMessage>({ type: 'pick-result', cancelled: true })
   }
-  // 右键 = 取消，同时不让网页弹右键菜单
   const onContextMenu = (e: Event) => cancel(e)
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') cancel(e)
     else if (e.key === '[') { swallow(e); setLevel(level - 1) }
     else if (e.key === ']') { swallow(e); setLevel(level + 1) }
   }
-  // 页面滚动时光标下的东西变了，重新算一下高亮
   const onScroll = () => retarget(lastPoint.x, lastPoint.y)
 
-  // 没人理就自己撤掉，免得一直拦着这个页面的滚轮和点击；Pointy那边超时也会发 pick-abort 过来
   const giveUp = setTimeout(() => { cleanup(); chrome.runtime.sendMessage<PickResultMessage>({ type: 'pick-result', cancelled: true }) }, 45_000)
   const onAbort = (msg: PickControlMessage | undefined) => { if (msg?.type === 'pick-abort') cleanup() }
   chrome.runtime.onMessage?.addListener(onAbort)

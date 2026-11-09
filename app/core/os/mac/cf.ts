@@ -1,5 +1,3 @@
-// macOS 的系统框架（CoreFoundation、CoreGraphics、辅助功能、objc）经 koffi 调用，
-// 主进程（app/core/os/darwin.ts）和读控件的小进程（app/pick/native/ax-helper.ts）共用
 import * as koffi from 'koffi'
 import type { BrowserWindow } from 'electron'
 import type { Pointer } from '../types.ts'
@@ -51,7 +49,6 @@ const kCFNumberDoubleType = 13
 const MAX_STRING = 200_000
 
 const strings = new Map<string, Pointer>()
-/** 常驻的 CFString（属性名、字典键），按内容缓存，不释放 */
 export function cfstr(s: string): Pointer {
   let ref = strings.get(s)
   if (!ref) { ref = CFStringCreateWithCString(null, s, kCFStringEncodingUTF8); strings.set(s, ref) }
@@ -85,7 +82,6 @@ export function toArray(ref: Pointer | null | undefined): Pointer[] {
 
 export const dictGet = (dict: Pointer, key: string) => CFDictionaryGetValue(dict, cfstr(key))
 
-// objc：只用到几个无参数的消息
 export const objc_getClass: (name: string) => Pointer = objc.func('void *objc_getClass(const char *name)')
 export const sel_registerName: (name: string) => Pointer = objc.func('void *sel_registerName(const char *name)')
 export const msgPtr: (self: Pointer, sel: Pointer) => Pointer = objc.func('void *objc_msgSend(void *self, void *sel)')
@@ -94,7 +90,6 @@ const msgOrder: (self: Pointer, sel: Pointer, mode: number, relativeTo: number) 
 /** Electron 窗口背后的 NSWindow（getNativeWindowHandle 给的是它的 NSView） */
 const nsWindow = (win: BrowserWindow) => msgPtr(koffi.decode(win.getNativeWindowHandle(), 'void *'), sel_registerName('window'))
 const NSWindowAbove = 1
-/** 把窗口排到另一个窗口（可以是别的程序的）正上方 */
 export const orderAbove = (win: BrowserWindow, windowNumber: bigint) => msgOrder(nsWindow(win), sel_registerName('orderWindow:relativeTo:'), NSWindowAbove, Number(windowNumber))
 export const send = (target: string | Pointer, sel: string) => msgPtr(typeof target === 'string' ? objc_getClass(target) : target, sel_registerName(sel))
 export const sendInt = (target: string | Pointer, sel: string) => Number(msgInt(typeof target === 'string' ? objc_getClass(target) : target, sel_registerName(sel)))

@@ -1,6 +1,3 @@
-// 普通程序里的指认：一层鼠标穿透的透明遮罩画高亮框，读控件的小进程查光标下的控件。
-// 遮罩让鼠标穿过去（不然查到的是遮罩自己），点击靠指认期间的系统级拦截接住（core/os 的 hookButtons）：左键选中、右键退出；
-// 空格确认、Esc、[ ] 调范围这几个键只在指认期间注册，空格留着给钩子装不上时用。
 import { BrowserWindow, desktopCapturer, globalShortcut, screen } from 'electron'
 import type { Display, Rectangle } from 'electron'
 import path from 'node:path'
@@ -20,10 +17,8 @@ const CONTROL_LABEL = {
   'ControlType.Image': '图片', 'ControlType.Table': '表格', 'ControlType.Custom': '控件', 'ControlType.MenuItem': '菜单项',
 }
 
-// control 是小进程报来的任意控件类型名，表里没有的查出来是 undefined
 const label = (c: { control?: string } | undefined) => CONTROL_LABEL[c?.control as keyof typeof CONTROL_LABEL] ?? '控件'
 
-/** 截一块屏幕区域（屏幕坐标），返回 JPEG data URL */
 async function captureRect(display: Display, rect: number[]) {
   const scale = display.scaleFactor
   const size = { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }
@@ -47,7 +42,6 @@ async function captureRect(display: Display, rect: number[]) {
   if (crop.width < 4 || crop.height < 4) return undefined
   let img = source.thumbnail.crop(crop)
   if (img.getSize().width > 1600) img = img.resize({ width: 1600 })
-  // JPEG 比 PNG 小得多，截图只在内存里传
   return `data:image/jpeg;base64,${img.toJPEG(85).toString('base64')}`
 }
 
@@ -55,7 +49,6 @@ const FOCUS_STEP = 1.15
 const FOCUS_MIN = 0.35
 const FOCUS_MAX = 4
 
-/** 撤掉指认后留在屏幕上的高亮框；shift 让它跟着来源窗口平移（DIP） */
 export type PickRelease = (() => void) & { shift?: (dx: number, dy: number) => void }
 
 export type NativePick =
@@ -73,10 +66,6 @@ export type NativePick =
 
 type DrawnControl = A11yChainItem & { rect: ScreenRect }
 
-/**
- * 进入指认，直到左键或空格确认 / Esc 或右键 / 超时。
- * @param note 提示条后面补的一句（比如浏览器扩展没连上）
- */
 export function pickNative({ note }: { note?: string } = {}): Promise<NativePick | null> {
   const cursor = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursor)
@@ -95,7 +84,7 @@ export function pickNative({ note }: { note?: string } = {}): Promise<NativePick
   os.swapCursor(display.scaleFactor)
 
   let levelUp = 0
-  let zoom = 1 // 虚线小框的缩放，滚轮调
+  let zoom = 1
   let chain: DrawnControl[] = []
   let point = os.toScreenPoint(cursor)
   let busy = false
@@ -111,7 +100,6 @@ export function pickNative({ note }: { note?: string } = {}): Promise<NativePick
         point = os.toScreenPoint(screen.getCursorScreenPoint())
         const r = await uiaRequest(`point ${point.x} ${point.y}`, 1000)
         chain = (r?.chain ?? []).filter((c): c is DrawnControl => !!c.rect && c.rect[2] > 4 && c.rect[3] > 4)
-        // 只给最深那个控件标空壳（往上调范围的祖先都当普通控件）
         if (chain[0] && r?.chain?.[0] && chain[0].rect === r.chain[0].rect) chain[0].opaque = isOpaque({ ...chain[0], kids: r.leafKids, readable: r.leafReadable, win: r.win })
         draw()
       } finally {
@@ -123,7 +111,6 @@ export function pickNative({ note }: { note?: string } = {}): Promise<NativePick
     function draw() {
       if (finished || overlay.isDestroyed()) return
       const c = chain[Math.min(levelUp, chain.length - 1)]
-      // 没变就不重发，免得过渡动画一直被打断
       const key = c ? `${c.rect.join(',')}|${c.name ?? ''}|${c.opaque ? `${point.x},${point.y},${zoom}` : ''}` : ''
       if (key === drawn) return
       drawn = key
@@ -140,9 +127,6 @@ export function pickNative({ note }: { note?: string } = {}): Promise<NativePick
       } satisfies OverlayHighlight)
     }
 
-    // 左键选中、右键退出。优先用钩子把左右键整个吃掉；钩子装不上时退回老办法（空格选中）：
-    // 看到右键按下就让遮罩接住鼠标（下面的程序已经收到按下，有的程序还是会弹菜单）
-    // 有虚线小框时滚轮调它的大小（往上滚变大），指认期间本来就接管了鼠标
     const focusShown = () => { const c = chain[Math.min(levelUp, chain.length - 1)]; return !!c?.opaque && !!focusRect(c.rect, point, os.unitsPerDip(display)) }
     const onWheel = (dir: number) => {
       zoom = Math.min(FOCUS_MAX, Math.max(FOCUS_MIN, zoom * (dir > 0 ? FOCUS_STEP : 1 / FOCUS_STEP)))
@@ -170,29 +154,22 @@ export function pickNative({ note }: { note?: string } = {}): Promise<NativePick
       clearTimeout(timer)
       for (const k of keys) globalShortcut.unregister(k)
       const release: PickRelease = () => { clearTimeout(expire); if (!overlay.isDestroyed()) overlay.destroy() }
-      // 来源程序的窗口挪了，留着的高亮框跟着挪（DIP）
       release.shift = (dx, dy) => { if (!overlay.isDestroyed()) overlay.webContents.send('shift', { dx, dy }) }
-      // 万一没人来撤，几分钟后自己撤掉，免得框一直挂在屏幕上
       const expire = setTimeout(release, HOLD_MAX_MS)
       if (!confirm || !chain.length) { release(); return resolve(null) }
-      // 遮罩先藏起来再查再截，免得把高亮框截进去；截完再拿出来，只留高亮框，卡片关掉时撤掉
       if (!overlay.isDestroyed()) overlay.hide()
       const level = Math.min(levelUp, chain.length - 1)
       await new Promise(r => setTimeout(r, 150))
       const detail = await uiaRequest(`element ${point.x} ${point.y} ${level}`, 3000)
       if (!detail?.ok) { release(); return resolve(detail?.isPassword ? { blocked: '指的是密码框' } : null) }
-      // 空壳程序（QQ、网易云）：截图只截跟着鼠标的小框，能读到元素的程序照旧截整块
       const whole = isWholeWindow({ rect: detail.rect, win: detail.win, control: detail.control })
       const opaque = isOpaque({ cls: detail.className, rect: detail.rect, kids: detail.kids, readable: detail.readable, win: detail.win, control: detail.control }) && (whole || !(detail.text ?? '').trim())
       const focus = detail.rect && opaque ? focusRect(detail.rect, point, os.unitsPerDip(display), zoom) : undefined
       const image = detail.rect ? await captureRect(display, focus ?? detail.rect).catch(() => undefined) : undefined
-      // 第二张：空壳程序是整个大框；能读到元素的程序是整个窗口，让模型看到周围还有什么（比如文件夹里别的文件）
       const wideRect = focus ? detail.rect : detail.win && detail.win.join(',') !== (detail.rect ?? []).join(',') ? detail.win : undefined
       const wide = wideRect ? await captureRect(display, wideRect).catch(() => undefined) : undefined
       if (!overlay.isDestroyed()) {
         overlay.webContents.send('hold')
-        // 和卡片一样挂到来源程序下面：在那个程序上面，别的程序切到前面就把它盖住；
-        // 来源程序找不到时才退回置顶。后弹出的卡片挂在同一个程序下，会在它上面
         const owner = os.foregroundId()
         overlay.setAlwaysOnTop(false)
         let attached = false
@@ -217,7 +194,6 @@ export function pickNative({ note }: { note?: string } = {}): Promise<NativePick
         wide,
         focused: !!focus,
         opaque,
-        // 调试开关打开时主进程写进日志，看各个程序被归成哪类
         diag: { cls: detail.className ?? '', control: detail.control ?? '', kids: !!detail.kids, readable: !!detail.readable, cover: detail.rect && detail.win ? Math.round(coverage(detail.rect, detail.win) * 100) : null, text: (detail.text ?? '').trim().length, opaque },
       })
     }
