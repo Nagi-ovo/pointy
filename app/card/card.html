@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="card.css">
 </head>
 <body>
-  <!-- 看板娘：扒在卡片左边往里看；在卡片外面，所以不受卡片的 overflow 裁切 -->
   <div id="mascot" class="idle" aria-hidden="true">
     <img alt="" draggable="false">
   </div>
@@ -16,9 +15,6 @@
       <span id="title" hidden></span>
       <span id="source"></span>
       <span class="spacer"></span>
-      <button id="open-agent" class="icon" type="button" hidden>
-        <svg viewBox="0 0 16 16"><path d="M6 3h7v7M13 3 4 12"/></svg>
-      </button>
       <button id="close" class="icon" type="button" title="关闭（Esc）">
         <svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>
       </button>

@@ -1,5 +1,3 @@
-// 编译各个 TypeScript 工程到 build/，再把页面、图片这些非代码文件按原来的目录结构抄过去
-//   node tools/build.ts
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'

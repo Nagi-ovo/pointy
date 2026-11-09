@@ -1,5 +1,4 @@
 // @deepseek-ai/dsh-llm comes from the DSH host at runtime and is not installed here.
-// Only what node.ts uses.
 declare module '@deepseek-ai/dsh-llm' {
   export interface ContentPart { type: string, text?: string, mediaType?: string, data?: string }
   export interface UserMessage { role: 'user', content: ContentPart[] }

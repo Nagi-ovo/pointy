@@ -1,7 +1,6 @@
 [hidden] { display: none !important; }
 
 :root {
-  /* 让滚动条、输入框这些原生控件跟着下面的 prefers-color-scheme 一起明暗 */
   color-scheme: light dark;
   --bg: #ffffff;
   --text: #1f2328;
@@ -19,14 +18,11 @@
   --blue: #4d6bfe;
   --blue-soft: #eef2ff;
   --blue-line: #c9d4ff;
-  /* 窗口四周只留 18px，阴影不能扩散得比这更远，否则在窗口边上被切成一条硬边 */
   --shadow: 0 3px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(15, 23, 42, 0.05);
-  /* 看板娘：窗口左边多留出她的位置，卡片本身的位置不变（main.js 里 MASCOT_ROOM 要和这里一致） */
   --card-left: 68px;
   --mascot-w: 70px;
   --mascot-h: 134px;
   --mascot-top: 30px;
-  /* 图（70×134 像素格）第 66 列起压到卡片上：竖线贴着卡片左边，手指和水滴搭在卡片上 */
   --mascot-over: 4px;
 }
 @media (prefers-color-scheme: dark) {
@@ -61,7 +57,6 @@ html, body {
   color: var(--text);
 }
 
-/* 窗口四周留出阴影的位置 */
 #card {
   position: absolute;
   inset: 18px 18px 18px var(--card-left);
@@ -77,7 +72,6 @@ html, body {
 }
 ::selection { background: var(--blue-line); }
 
-/* ---------- 看板娘 ---------- */
 #mascot {
   position: absolute;
   left: calc(var(--card-left) + var(--mascot-over) - var(--mascot-w));
@@ -96,7 +90,6 @@ html, body {
   filter: drop-shadow(0 1px 1.5px rgba(15, 23, 42, 0.18));
   pointer-events: none;
 }
-/* 呼吸：一格一格地上下 1px，像素风不要平滑 */
 #mascot.idle img, #mascot.think img { animation: breathe 2.4s steps(1) infinite; }
 #mascot.done img { animation: hop 520ms cubic-bezier(0.3, 1.6, 0.5, 1) 1; }
 #mascot.error img { transform: translateY(3px); transition: transform 300ms ease; }
@@ -107,35 +100,24 @@ html, body {
 @keyframes wiggle { 25% { transform: translateX(-1px); } 50% { transform: translateX(1px); } 75% { transform: translateX(-1px); } }
 
 @keyframes pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
-/* 从右下角胶囊放回来：从右下往回放大 */
 @keyframes restore { from { opacity: 0; transform: scale(0.3); } to { opacity: 1; transform: none; } }
-/* 收进右下角胶囊：往右下角缩小淡出，窗口同时滑向托盘 */
 @keyframes shrink { to { opacity: 0; transform: scale(0.3); } }
 #card.shrinking { animation: shrink 220ms cubic-bezier(.4,0,.8,.6) forwards; }
 #card.shrinking, #card.restoring { transform-origin: 100% 100%; }
 
 button { font: inherit; color: inherit; }
-/* 键盘聚焦（Tab 切换时）用淡蓝描边，不用系统默认的橙色 */
 button:focus-visible { outline: 2px solid var(--blue-line); outline-offset: 1px; }
-/* 只有对话区可以被压扁（滚动），其他部分量出来的高度才是真高度 */
 #card > * { flex: none; }
-/* 对话区可以被压扁但不撑开：窗口比内容高时空出来的地方不给它，免得问题下面空一截；手动拉大过的才占满 */
 #card > #thread { flex: 0 1 auto; }
 #card.manual > #thread { flex: 1 1 auto; }
 
-/* ---------- 顶栏 ---------- */
 header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag; }
 .spacer { flex: 1; }
-/* 状态圈不显示了（看板娘表情和收起后的胶囊已经说明状态），只留着给脚本记状态 */
 #status { display: none; }
-/* 顶上只写从哪指过来的；去 agent 那边改成回答下面的「在 XX 里继续」 */
-/* 问过之后：对话标题在最前，来源跟在后面，地方不够先挤来源 */
 #title { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text); font-size: 14px; font-weight: 600; }
 #title:not([hidden]) + #source { flex: 0 100 auto; }
 #title:not([hidden]) + #source::before { content: '· '; }
 #source { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); font-size: 12.5px; }
-#open-agent { display: none !important; }
-/* 输入框下面单独一行：插到哪个对话 */
 #target-row { display: flex; align-items: center; gap: 4px; margin: 8px 0 0 -6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); min-width: 0; }
 
 #target-wrap { -webkit-app-region: no-drag; position: relative; min-width: 0; }
@@ -152,7 +134,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 }
 #target-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #target-meta { flex: none; white-space: nowrap; color: var(--faint); }
-/* 要接到已有对话时用正文颜色，一眼看出会接到哪 */
 #target.continuing { color: var(--text); }
 #target-meta.running { color: #2da44e; }
 #target svg { flex: none; width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; }
@@ -160,7 +141,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #target:disabled { cursor: default; background: transparent; color: var(--faint); }
 #target:disabled svg { display: none; }
 
-/* 发送目标下拉：最近 5 个会话 + 新任务 */
 #target-menu {
   position: fixed; z-index: 10;
   width: 300px; padding: 6px;
@@ -194,7 +174,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .menu-search::placeholder { color: var(--faint); }
 .menu-list { max-height: 264px; overflow-y: auto; }
 .menu-note { padding: 6px 8px; color: var(--faint); font-size: 12px; }
-/* 新任务那行右边的工作区 */
 .opt .ws {
   flex: none; display: flex; align-items: center; gap: 3px; max-width: 150px;
   padding: 2px 6px; margin: -2px -4px -2px 0; border-radius: 6px;
@@ -214,7 +193,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .icon:hover { background: var(--chip); color: var(--text); }
 .icon svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 
-/* ---------- 引用 ---------- */
 #quote-wrap { position: relative; margin: 12px 0 2px; }
 #quote {
   margin: 0;
@@ -230,21 +208,17 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
   overflow: hidden;
   cursor: pointer;
 }
-/* 顶上的一句说明（比如浏览器里扩展没连上，这次指得没那么准） */
 #note { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; padding: 6px 10px; border-radius: 8px; background: var(--blue-soft); color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 #note[hidden] { display: none; }
 #note span { flex: 1; min-width: 0; }
 #note button { flex: none; padding: 2px 10px; border: none; border-radius: 6px; background: var(--bg); color: var(--blue); font-size: 12.5px; cursor: pointer; }
 #note button[hidden] { display: none; }
 
-/* 问出去以后引用收成一行 */
 #quote.compact { -webkit-line-clamp: 1; }
 #quote.open { display: block; -webkit-line-clamp: unset; max-height: 220px; overflow: auto; }
 
-/* 截图缩略图 */
 #shot { position: relative; align-self: flex-start; display: flex; gap: 8px; margin: 12px 0 0; }
 #shot img { display: block; max-width: 220px; max-height: 96px; border-radius: 8px; border: 1px solid var(--line); }
-/* 引用和截图右上角的 ×：悬停才出现，点掉就不发 */
 .drop {
   position: absolute; top: -7px; right: -7px;
   width: 18px; height: 18px; padding: 0;
@@ -256,7 +230,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 }
 #shot:hover .drop, #quote-wrap:hover .drop { opacity: 1; }
 
-/* ---------- 对话 ---------- */
 #thread { margin-top: 12px; flex: 1; min-height: 0; overflow: auto; user-select: text; }
 .you { margin: 0 0 10px auto; width: fit-content; max-width: 85%; padding: 6px 12px; border-radius: 14px 14px 4px 14px; background: var(--blue-soft); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .reply { margin-bottom: 10px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
@@ -276,7 +249,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .after button.copy svg { width: 14px; height: 14px; }
 .after button:hover { background: var(--chip); color: var(--text); }
 .after button svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-/* 进度行：跟在这一问（或回答）下面，正文字号；完整档上面列最近几步，后面带已用时间 */
 #activity { margin: 2px 0 10px; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
 #activity.error { color: var(--error); }
 #activity .step { color: var(--faint); font-size: 12.5px; }
@@ -292,7 +264,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .reply img.md-img { display: block; max-width: 100%; max-height: 220px; margin: 6px 0; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line); cursor: zoom-in; }
 .after button.key-link { color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue-line); }
 
-/* ---------- 输入区 ---------- */
 #composer { margin-top: 10px; }
 #input {
   box-sizing: border-box;
@@ -312,7 +283,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #input::placeholder { color: var(--faint); }
 #input { caret-color: var(--blue); }
 
-/* 建议：输入框空的时候才出现，极轻的灰字 */
 #suggest { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px; }
 #suggest button {
   padding: 3px 10px;
@@ -333,10 +303,8 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 #bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-/* 问过之后发到哪已经定了，那一行不要了；分隔线挪到模型这行上面 */
 #card.asked #target-row { display: none; }
 #card.asked #bar { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
-/* 模型：和发送目标一样的小下拉，菜单往上开；文字和上面左对齐 */
 #model-wrap { position: relative; min-width: 0; margin-left: -6px; }
 #model {
   display: inline-flex; align-items: center; gap: 4px;
@@ -359,7 +327,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
   border: 1px solid var(--line);
 }
 .group { padding: 6px 8px 2px; color: var(--faint); font-size: 11.5px; }
-/* 模型菜单底下的思考强度：一行分段按钮，样子同快答/完整 */
 .effort-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px 2px 8px; }
 .effort-label { flex: none; color: var(--faint); font-size: 12px; }
 .effort-seg { display: inline-flex; flex-wrap: wrap; padding: 2px; border-radius: 8px; background: var(--chip); }
@@ -367,7 +334,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .effort-seg button:hover { color: var(--text); }
 .effort-seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12); }
 
-/* 快答 / 完整：小号分段开关，选中的那格浮起来 */
 #mode { flex: none; display: inline-flex; padding: 2px; border-radius: 8px; background: var(--chip); }
 #mode button {
   padding: 2px 9px; border: none; border-radius: 6px; background: transparent;
@@ -376,11 +342,9 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #mode button:hover { color: var(--text); }
 #mode button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12); }
 
-/* 拖过大小之后：还没提问时输入框占满剩下的空间，发送栏贴底；提问后由对话区占满 */
 #card.manual #thread[hidden] ~ #composer { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 #card.manual #thread[hidden] ~ #composer #input { flex: 1 1 auto; max-height: none; }
 
-/* 右下角调大小 */
 #grip {
   position: absolute; right: 3px; bottom: 3px;
   width: 16px; height: 16px;
@@ -403,7 +367,6 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #send:disabled { background: var(--blue-soft); color: var(--blue-line); cursor: default; }
 #send svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-/* ---------- 配对 ---------- */
 #pair-view { padding: 10px 0 4px; text-align: center; color: var(--muted); }
 #pair-code { font-size: 34px; font-weight: 600; letter-spacing: 8px; margin: 8px 0; color: var(--text); }
 .hint { font-size: 12.5px; color: var(--faint); }

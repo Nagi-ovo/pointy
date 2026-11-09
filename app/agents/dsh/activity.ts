@@ -1,9 +1,6 @@
-// DSH 报来的工具调用、网址说成人话（等待时卡片上显示）。不依赖 Electron，测试直接用
-
 const short = (s: string, n = 36) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
-/** 网址说成"issue #5075""B 站视频 BV…"，认不出就是域名加路径 */
 export function describeUrl(raw: string) {
   let u
   try { u = new URL(raw) } catch { return short(raw) }
@@ -19,7 +16,6 @@ export function describeUrl(raw: string) {
   return short(`${u.hostname.replace(/^www\./, '')}${parts.length ? `/${parts.join('/')}` : ''}`)
 }
 
-/** DSH 的工具调用说成人话（等待时卡片上显示） */
 export function activityText(tool: string, detail: string) {
   const t = tool.toLowerCase()
   const d = detail.trim()

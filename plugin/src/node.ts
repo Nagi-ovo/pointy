@@ -1,25 +1,3 @@
-/**
- * @pointylab/dsh host half (Pointy).
- *
- * - Carries Pointy itself in ../pet and starts it on the first DSH run where it
- *   is not already running, after downloading its Electron runtime once
- *   (see runtime.ts). Pointy quits on its own when DSH goes away.
- *
- * - Listens to `session/event`, `agent/status` and `agent/error` and pushes a
- *   compact pet state (thinking / running / editing / ... / done / error) to
- *   the pet over ws://127.0.0.1:<port>.
- * - Registers a prepended `approval/request` waterfall listener: the request
- *   still goes to the DSH UI through `next()`, and the pet may answer first.
- *   When the pet wins, an AbortController merged into `request.signal` makes
- *   the gateway withdraw the UI prompt.
- * - Delivers files dropped on the pet to the most recently active root session
- *   with `agent.followup()`.
- * - Generates short pet lines through `ctx.llm`, reusing DSH's own model route
- *   and credentials; no key ever passes through this plugin.
- *
- * Both ends prove knowledge of the token in %USERPROFILE%\.pointy\token with
- * an HMAC challenge before the plugin accepts approvals or files.
- */
 import { spawn } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -30,10 +8,6 @@ import { type Logger, PET_APP_DIR, ensureRuntime } from './runtime.ts'
 
 interface Route { provider: string, model: string }
 interface Agent { followup(message: unknown): void }
-/**
- * The DSH plugin context, as far as this plugin uses it. Event payloads and
- * the services behind `get()` are DSH internals and stay untyped here.
- */
 interface DshContext {
   logger?: Logger
   llm: {
@@ -51,9 +25,7 @@ interface DshContext {
   inject(deps: string[], setup: (ctx: any) => () => Promise<void>): void
 }
 
-/** A model the card picked; `sessionOnly` leaves DSH's default model alone. */
 interface ModelChoice { provider?: unknown, model?: unknown, reasoningEffort?: unknown, sessionOnly?: unknown }
-/** Messages from the pet once it has authenticated. */
 type PetMessage =
   | { type: 'approve', id: string, decision: unknown }
   | { type: 'files', paths: unknown }
@@ -63,7 +35,6 @@ type PetMessage =
   | { type: 'focus', sessionId: unknown }
   | { type: 'suggest-request', reqId: string, context?: unknown }
   | { type: 'ask', askId: string, target: string, text: unknown, model?: ModelChoice, image?: unknown, images?: unknown, workspaceId?: string }
-/** The pet's handshake, before authentication. */
 type HandshakeMessage = { type: 'challenge', nonce: string } | { type: 'hello-ok', proof: unknown }
 
 interface SessionItem {
@@ -76,10 +47,8 @@ interface SessionItem {
   snippet?: string
 }
 interface Workspace { id: string, title: string, sessionIds: string[] }
-/** An entry of DSH's workspace registry. */
 interface RegisteredWorkspace { id: string, title: string, path: string, sessionIds: string[] }
 interface WorkspaceRegistry { list(): RegisteredWorkspace[], delete(id: string): Promise<void> }
-/** DSH's model picker catalog. */
 interface ModelCatalog {
   groups?: { id: string, name: string, models: { id: string, name?: string, reasoning?: { efforts?: { id: string, name?: string }[], defaultEffort?: string } }[] }[]
   default?: { provider?: string, model?: string, reasoningEffort?: string }
@@ -101,7 +70,6 @@ const STALE_EVENT_MS = 30_000
 const LINE_MIN_INTERVAL_MS = 15_000
 const LINE_TIMEOUT_MS = 15_000
 const DEFAULT_ROUTE: Route = { provider: 'deepseek-account', model: 'deepseek-flash' }
-/** Private RPC channel the browser half (lib/client.ts) polls for sessions to open. */
 const RPC_CHANNEL = '/pointy'
 const FOCUS_POLL_MS = 20_000
 const FOCUS_PENDING_MS = 8_000
@@ -133,7 +101,6 @@ const STATE_HINT: Record<string, string> = {
   files: '主人把文件拖给了你',
 }
 
-/** Map a DSH tool name to the pet's activity state. */
 function classifyTool(toolName: string) {
   const n = toolName.toLowerCase()
   if (/^(pwsh|bash|terminal|shell|run_code|job_|ptc)/.test(n)) return 'running'
@@ -143,7 +110,6 @@ function classifyTool(toolName: string) {
   return 'thinking'
 }
 
-/** A one-line, display-only summary of a tool call; never the full arguments. */
 function summarizeCall(toolName: string, rawArgs: string) {
   let args: Record<string, unknown> | null
   try { args = JSON.parse(rawArgs) } catch { return '' }
@@ -166,14 +132,12 @@ function safeEqual(a: unknown, b: string) {
     crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))
 }
 
-/** The pet's console output, started fresh once it grows past PET_LOG_MAX. */
 function openPetLog() {
   fs.mkdirSync(PET_DIR, { recursive: true })
   const size = fs.statSync(PET_LOG, { throwIfNoEntry: false })?.size ?? 0
   return fs.openSync(PET_LOG, size > PET_LOG_MAX ? 'w' : 'a')
 }
 
-/** Spawn the bundled pet detached on the downloaded Electron runtime. */
 async function launchPet(logger: Logger) {
   let exe
   try {
@@ -183,7 +147,6 @@ async function launchPet(logger: Logger) {
   }
   logger.info(`pointy: starting Pointy: ${exe} ${PET_APP_DIR}`)
   // The DSH host runs Electron in node mode; the pet must not inherit that.
-  // POINTY_HOST_PID：拉起它的 DSH 插件宿主；宿主没了、插件又没连着，Pointy 就自己退
   const env: NodeJS.ProcessEnv = { ...process.env, POINTY_MANAGED: '1', POINTY_HOST_PID: String(process.pid) }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.NODE_OPTIONS
@@ -200,7 +163,6 @@ async function launchPet(logger: Logger) {
   }
 }
 
-/** Reconnecting, HMAC-authenticated WebSocket client to the pet. */
 class PetLink {
   logger: Logger
   onMessage: (msg: PetMessage) => void
@@ -210,7 +172,6 @@ class PetLink {
   timer: ReturnType<typeof setTimeout> | undefined
   onReady: () => void
   onLost: () => void
-  /** Called when nothing is listening on the port, i.e. the pet is not running. */
   onUnreachable: () => void
 
   constructor(logger: Logger, onMessage: (msg: PetMessage) => void) {
@@ -291,18 +252,12 @@ class PetLink {
 
 export function apply(ctx: DshContext) {
   const logger: Logger = ctx.logger ?? console
-  /** Most recent route seen in a `request/header`, reused for pet lines. */
   let route: Route | undefined
-  /** Most recently active root session id: target for dropped files. */
   let activeRoot: string | undefined
   const titles = new Map<string, string>()
-  /** callId -> summary, bounded; lets the approval card show what will run. */
   const callSummaries = new Map<string, string>()
-  /** approval id -> answer(decision) */
   const pendingApprovals = new Map<string, (decision: 'allow' | 'reject' | 'detach') => void>()
-  /** Last state per session, replayed to a pet that connects mid-task. */
   const lastState = new Map<string, object>()
-  /** sessionId -> askId of the card currently following that session */
   const asks = new Map<string, string>()
   let lastLineAt = 0
   let lineBusy = false
@@ -313,7 +268,6 @@ export function apply(ctx: DshContext) {
     link.send(uiInfo())
     for (const msg of lastState.values()) link.send(msg)
   }
-  // Start the pet once per DSH run if it is not already running.
   let launchTried = false
   link.onUnreachable = () => {
     if (launchTried) return
@@ -321,11 +275,9 @@ export function apply(ctx: DshContext) {
     launchPet(logger).catch((error) => logger.warn(`pointy: ${error.message}`))
   }
   link.onLost = () => {
-    // A pet that vanished cannot answer; leave pending approvals to the UI.
     for (const answer of pendingApprovals.values()) answer('detach')
   }
 
-  // Where "open in DSH" should go: the desktop window, or the browser tab serving the web UI.
   let webOrigin: string | undefined
   const uiInfo = () => ({ type: 'ui', kind: DESKTOP ? 'desktop' : 'web', origin: DESKTOP ? undefined : webOrigin })
   function noteOrigin(origin: unknown) {
@@ -354,7 +306,6 @@ export function apply(ctx: DshContext) {
       case 'session/title':
         if (typeof data.title === 'string') {
           titles.set(sid, data.title)
-          // DSH often names the session after the answer is done; the card and its pill want the real name too.
           link.send({ type: 'title', sessionId: sid, title: data.title })
         }
         break
@@ -402,7 +353,6 @@ export function apply(ctx: DshContext) {
     if (asks.has(agent.id)) link.send({ type: 'ask-error', askId: asks.get(agent.id), sessionId: agent.id, error: detail })
   }, { global: true })
 
-  // Live text of sessions started or continued from the ask card.
   ctx.on('agent/assistant-stream', ({ agent, frame }) => {
     const askId = asks.get(agent.session.id)
     if (askId === undefined) return
@@ -447,7 +397,6 @@ export function apply(ctx: DshContext) {
         withdraw.abort(new Error('answered on Pointy'))
       })
       Promise.resolve().then<string>(next).then((outcome) => {
-        // No UI answered: keep the question open for the pet alone.
         if (outcome === 'unavailable' && link.authed && !settled) { uiDeclined = true; return }
         finish(outcome, 'dsh')
       }, () => {
@@ -487,7 +436,6 @@ export function apply(ctx: DshContext) {
       Promise.all([listSessions().catch(() => []), modelCatalog().catch(() => ({}))]).then(([items, catalog]) => link.send({
         type: 'sessions',
         reqId: msg.reqId,
-        // 这次 DSH 运行里还没跑过会话时，最近更新的那个就算"当前会话"
         activeRoot: activeRoot ?? items[0]?.sessionId,
         items: items.slice(0, 15),
         model: (route ?? DEFAULT_ROUTE).model,
@@ -515,7 +463,6 @@ export function apply(ctx: DshContext) {
     }
   }
 
-  /** Root sessions for the card's target picker, newest first. */
   async function listSessions(): Promise<SessionItem[]> {
     const controller = ctx.get('sessionController')
     const seen = new Map<string, SessionItem>([...titles].map(([id, title]) => [id, { sessionId: id, title }]))
@@ -534,10 +481,6 @@ export function apply(ctx: DshContext) {
       .sort((a, b) => Number(b.updatedAt ?? 0) - Number(a.updatedAt ?? 0) || String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
   }
 
-  /**
-   * Sessions matching the card's search box: title matches first, then
-   * sessions whose messages contain the text (DSH's own session search).
-   */
   async function searchSessions(query: string) {
     const q = query.trim()
     if (!q) return []
@@ -560,7 +503,6 @@ export function apply(ctx: DshContext) {
     return hits.slice(0, 20)
   }
 
-  /** Workspaces a new task can go to, as the DSH sidebar names them. */
   function workspaceList(): Workspace[] {
     const registry: WorkspaceRegistry | undefined = ctx.get('workspaceRegistry')
     return (registry?.list() ?? []).map(w => ({
@@ -570,7 +512,6 @@ export function apply(ctx: DshContext) {
     }))
   }
 
-  /** Models the card's picker offers: the same catalog DSH's own model picker uses. */
   async function modelCatalog() {
     const controller = ctx.get('sessionController')
     if (!controller?.modelCatalog) return {}
@@ -580,20 +521,12 @@ export function apply(ctx: DshContext) {
       providerName: g.name,
       model: m.id,
       name: m.name || m.id,
-      // Thinking efforts the model offers, as DSH's own picker names them.
       ...(m.reasoning?.efforts?.length ? { efforts: m.reasoning.efforts.map(e => ({ id: e.id, name: e.name || e.id })), defaultEffort: m.reasoning.defaultEffort } : {}),
     })))
     const d = catalog?.default
     return { models, defaultModel: d?.provider && d?.model ? { provider: d.provider, model: d.model, ...(d.reasoningEffort ? { reasoningEffort: d.reasoningEffort } : {}) } : undefined }
   }
 
-  /**
-   * Two next steps the user likely wants for what they pointed at, in their
-   * own voice. Clicking one sends it as the question; nothing here asks the
-   * agent to save or file anything. Recent session titles used to be passed
-   * in and pulled the model toward "is this related to my project?", so the
-   * prompt sees only the pointed content.
-   */
   async function suggest({ context }: { context?: unknown }): Promise<Suggestion[]> {
     const system = [
       '用户在屏幕上指着一块内容（网页评论、帖子、issue、代码、报错、图片等），准备交给他的 AI 助手。你替他想 2 个下一步最想让助手做的事。',
@@ -631,11 +564,9 @@ export function apply(ctx: DshContext) {
     return items
       .filter((i): i is Suggestion => typeof i?.label === 'string' && typeof i?.prompt === 'string')
       .slice(0, 2)
-      // 不按字数硬切（会切成"stream uploads 的"这种半句），太长的由卡片按宽度显示省略号
       .map(i => ({ label: i.label.trim().slice(0, 60), prompt: i.prompt.slice(0, 600) }))
   }
 
-  /** New tasks go to the default workspace (unless the card picked another) so they show up in the DSH sidebar. */
   function defaultWorkspace() {
     const registry: WorkspaceRegistry | undefined = ctx.get('workspaceRegistry')
     const all = registry?.list() ?? []
@@ -644,11 +575,6 @@ export function apply(ctx: DshContext) {
       all[0]
   }
 
-  /**
-   * 0.2.0–0.2.2 registered the pet's notebook folder as a workspace named
-   * "桌宠小本本". The notebook is gone; drop that one registration. Removing a
-   * workspace keeps its folder and sessions (they become ungrouped).
-   */
   async function removeNotebookWorkspace() {
     const registry: WorkspaceRegistry | undefined = ctx.get('workspaceRegistry')
     if (!registry) return
@@ -676,7 +602,6 @@ export function apply(ctx: DshContext) {
     }
     let agent = ctx.agents.get(sessionId)
     if (agent === undefined && controller?.agents?.resolveAgent) {
-      // Not loaded yet (an older session): activate it the way the DSH UI does.
       const resolved = await controller.agents.resolveAgent(sessionId)
       if ('agent' in resolved) agent = resolved.agent
     }
@@ -708,12 +633,6 @@ export function apply(ctx: DshContext) {
     return sessionId
   }
 
-  /**
-   * Text plus optional screenshots of what the user pointed at (in QQ-like apps:
-   * the strip around the mouse and the whole area). The images go through DSH's
-   * own attachment admission, the same path as images pasted into the DSH
-   * composer, so they are stored with the session like those.
-   */
   async function promptContent(text: string, images: unknown[]) {
     const parts = images
       .map(image => typeof image === 'string' ? image.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/) : null)
@@ -774,8 +693,6 @@ export function apply(ctx: DshContext) {
     return () => link.stop()
   }, 'pointy: pet link')
 
-  // "在 DSH 中打开"：Pointy发来会话 id，交给 DSH 页面里的插件界面那一半去 openSession。
-  // 页面那边长轮询 next-focus；没人在等时先存着，几秒内来问的还能拿到。
   const focusWaiters = new Set<(sessionId: string | null) => void>()
   let pendingFocus: { sessionId: string, at: number } | undefined
   function requestFocus(sessionId: string) {

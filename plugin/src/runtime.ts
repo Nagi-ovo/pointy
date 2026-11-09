@@ -1,12 +1,3 @@
-/**
- * Pointy needs a full Electron runtime (windows, tray, screenshots), which the
- * DSH plugin host does not have: it runs DSH's own binary in node mode. So the
- * plugin carries Pointy's code in ../pet and, the first time, downloads the
- * stock Electron build that Pointy was tested with into ~/.pointy/runtime.
- *
- * The zip is checked against the SHA-256 pinned in pet/package.json at pack
- * time, so a mirror can only be slow, never substitute a different binary.
- */
 import { spawn } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -14,7 +5,6 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Compiled to build/src/runtime.js; pet/ sits next to build/ in the package.
 export const PET_APP_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'pet')
 const RUNTIME_DIR = path.join(os.homedir(), '.pointy', 'runtime')
 
@@ -27,19 +17,14 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60_000
 const TARGET = `${process.platform}-${process.arch}`
 
 export type Logger = Pick<Console, 'info' | 'warn'>
-/** This platform's Electron zip as pinned in pet/package.json. */
 interface Pin { version: string, sha256: string }
-/** How one platform's runtime is laid out, unpacked and branded. */
 interface Target {
-  /** Executables inside the runtime dir, branded first. */
   exes: string[]
-  /** The file that proves the zip unpacked. */
   stock: string
   unzip(zip: string, dir: string): Promise<void>
   brand(dir: string, zip: string, logger: Logger): Promise<void>
 }
 
-/** This platform's Electron zip pinned by tools/pack-plugin.ts, or undefined (dev checkout, unsupported platform). */
 export function pinnedRuntime(target = TARGET): Pin | undefined {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(PET_APP_DIR, 'package.json'), 'utf8'))
@@ -53,7 +38,6 @@ export function pinnedRuntime(target = TARGET): Pin | undefined {
 const zipName = (version: string) => `electron-v${version}-${TARGET}.zip`
 const runtimeDir = (version: string) => path.join(RUNTIME_DIR, `electron-v${version}-${TARGET}`)
 
-/** The executable of the pinned runtime if it is already unpacked: the branded one, else the stock fallback. */
 export function installedRuntime(pin = pinnedRuntime()): string | undefined {
   const target = TARGETS[TARGET]
   if (!pin || !target) return undefined
@@ -93,11 +77,9 @@ function run(file: string, args: string[]) {
 }
 
 /**
- * Rename electron.exe to Pointy.exe and rewrite its version strings and icon.
- * Task Manager's process list shows the FileDescription, its details tab the
- * file name. The official signature no longer matches afterwards, so it is
+ * The official signature no longer matches afterwards, so it is
  * dropped; Windows does not check signatures of programs started by another
- * program. If the resource edit fails, the renamed stock binary still runs.
+ * program.
  */
 async function brandWindows(dir: string, zip: string, logger: Logger) {
   const from = path.join(dir, 'electron.exe')
@@ -132,12 +114,9 @@ async function brandWindows(dir: string, zip: string, logger: Logger) {
 const plist = (file: string, key: string, type: string, value: string) => run('/usr/bin/plutil', ['-replace', key, type, value, file])
 
 /**
- * Turn Electron.app into Pointy.app: the Accessibility and Screen Recording
- * prompts, Activity Monitor and the menu bar show the bundle's name and icon.
  * Editing the bundle breaks Electron's signature, and Apple silicon refuses to
  * run unsigned code, so the result is re-signed ad hoc. The zip comes from
  * fetch, not a browser, so it carries no quarantine flag for Gatekeeper to check.
- * If any step fails, the bundle is unpacked again and the stock Electron.app is used.
  */
 async function brandMac(dir: string, zip: string, logger: Logger) {
   const app = path.join(dir, 'Pointy.app')
@@ -180,10 +159,6 @@ const TARGETS: Record<string, Target | undefined> = {
 }
 
 let installing: Promise<string | undefined> | undefined
-/**
- * Make sure the pinned Electron is unpacked; returns the path of its executable.
- * One download at a time per DSH run; older runtimes are removed afterwards.
- */
 export function ensureRuntime(logger: Logger): Promise<string | undefined> {
   const target = TARGETS[TARGET]
   if (!target) return Promise.reject(new Error(`Pointy supports Windows x64 and macOS (arm64, x64), not ${TARGET}`))
@@ -197,7 +172,6 @@ export function ensureRuntime(logger: Logger): Promise<string | undefined> {
 
 async function install(pin: Pin, target: Target, logger: Logger) {
   fs.mkdirSync(RUNTIME_DIR, { recursive: true })
-  // Leftovers of a download that was cut off (DSH closed midway).
   for (const name of fs.readdirSync(RUNTIME_DIR)) {
     const full = path.join(RUNTIME_DIR, name)
     if (name.startsWith('tmp-') && Date.now() - fs.statSync(full).mtimeMs > 3600_000) fs.rmSync(full, { recursive: true, force: true })

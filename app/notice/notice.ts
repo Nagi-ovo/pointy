@@ -1,6 +1,3 @@
-// 小提示窗：一个标题、几段话、几个按钮。点了哪个按钮（或关掉）告诉主进程。
-// 段落里只认 **粗体**，其余按纯文本放进去。
-// 段落也可以是 { text, copy: [值, …] }：段落下面一行可复制的值，点了只复制、窗口不关
 const $ = (id: string) => document.getElementById(id)!
 
 function paragraph(text: string) {
@@ -51,7 +48,6 @@ window.notice.onInit((data) => {
     el.addEventListener('click', () => window.notice.choose(b.id))
     return el
   }))
-  // 量卡片本身（加上下各 14px 边距）：量整页的话，内容比窗口矮时量出来的是窗口高度，缩不回去
   requestAnimationFrame(() => window.notice.resize(Math.ceil($('box').getBoundingClientRect().height) + 28))
 })
 

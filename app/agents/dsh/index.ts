@@ -1,5 +1,3 @@
-// DSH（DeepSeek Harness）适配：DSH 里装的插件（plugin/）连上 Pointy 的本机服务，这里把它翻译成卡片认识的通用 agent 接口。
-// 跟 DSH 有关的事都在这个目录：消息格式、临时标题、工具名、怎么把 DSH 叫到前台、随 DSH 启停
 import { shell } from 'electron'
 import type { WebSocket } from 'ws'
 import { logError } from '../../core/env.ts'
@@ -10,7 +8,6 @@ import * as host from './host.ts'
 import type { AgentDeps, AgentUi } from '../index.ts'
 import type { ConnectionHandler } from '../../server.ts'
 
-/** 插件发来的消息：要转给卡片的那些（AgentEvent），加上只有这里关心的几种 */
 type PluginMessage =
   | AgentEvent
   | { type: 'ready'; plugin?: string }
@@ -21,13 +18,12 @@ type PluginMessage =
 
 export const name = 'DSH'
 
-// init() 之前是空的
 let deps = {} as AgentDeps
-let plugin: WebSocket | undefined // 已认证的插件连接
-let pluginVersion: string | undefined // 插件连上时报的版本，托盘里显示，方便看出 DSH 加载的是不是新版
+let plugin: WebSocket | undefined
+let pluginVersion: string | undefined
 let everConnected = false
 let pendingApprovals = 0
-let ui: AgentUi = { kind: 'desktop' } // 插件报来的：DSH 是桌面版，还是浏览器里的 web 版（origin 是它的地址）
+let ui: AgentUi = { kind: 'desktop' }
 
 export function init(d: AgentDeps) {
   deps = d
@@ -40,7 +36,6 @@ const sendToPlugin = (msg: object) => {
   return true
 }
 
-// ---------- 插件 → 卡片 ----------
 // DSH 起正式标题前拿第一条消息开头当临时标题，那就是我们拼的内容块，不往外报
 const realTitle = (t: string | undefined) => (t && !isOurPreamble(t) ? t : undefined)
 
@@ -62,12 +57,10 @@ function onPluginMessage(raw: PluginMessage) {
     pendingApprovals = Math.max(0, pendingApprovals - 1)
     deps.onChange?.()
   }
-  // 任务进度（胶囊用）：做完、出错、标题变了
   if (msg.type === 'ask-done' || msg.type === 'ask-error' || msg.type === 'state' || msg.type === 'title') deps.onTask?.(msg)
   if (forCards(msg)) deps.toCards?.(msg)
 }
 
-/** 服务认证通过一条插件连接时调用；返回这条连接的处理器 */
 export function attach(ws: WebSocket): ConnectionHandler {
   if (plugin && plugin !== ws) plugin.close()
   plugin = ws
@@ -86,8 +79,6 @@ export function attach(ws: WebSocket): ConnectionHandler {
   }
 }
 
-// ---------- 卡片 → 插件 ----------
-/** 卡片发来的请求。返回 false 表示没连上 */
 export function request(msg: CardRequest) {
   if (msg.type === 'ask') {
     const text = msg.followUp ? composeFollowUp(msg) : composeFirst(msg)
@@ -104,10 +95,6 @@ export function request(msg: CardRequest) {
   return false
 }
 
-/**
- * 把 DSH 叫到前台并切到这个会话。桌面版走 dsh://open；web 版没有窗口可拉，
- * 有浏览器扩展就让它把开着 DSH 的标签页切到前面，没扩展只能在原标签页里切会话。
- */
 export function open(sessionId?: string) {
   os.allowAnyForeground()
   if (ui.kind === 'web') {
@@ -118,7 +105,6 @@ export function open(sessionId?: string) {
   if (typeof sessionId === 'string' && sessionId) sendToPlugin({ type: 'focus', sessionId })
 }
 
-/** 托盘用：连上没有、几个操作等批准 */
 export const status = () => ({ connected: !!plugin, version: pluginVersion, pendingApprovals })
 
 export const willQuit = host.willQuit

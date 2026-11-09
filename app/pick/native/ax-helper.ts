@@ -1,8 +1,3 @@
-// macOS 上读控件的常驻小进程，和 uia-selection.ps1 说同样的话：从 stdin 读一行命令，查一次辅助功能接口，输出一行 JSON。
-//   grab              焦点控件里选中的文字
-//   point X Y         坐标下的控件，以及往上几层祖先（高亮框用）
-//   element X Y UP    坐标下的控件往上 UP 层，取它的名字、值、文字（确认指认时用）
-// 坐标是屏幕点（和 Electron 的 DIP 一样）。放在单独的进程里，目标程序卡住时不拖慢 Pointy 的主进程
 import readline from 'node:readline'
 import { AX, TYPE, constant, cfstr, isType, toString, toArray, CFRelease, CFURLGetString } from '../../core/os/mac/cf.ts'
 import type { CFRangeValue, CGPointValue, CGSizeValue } from '../../core/os/mac/cf.ts'
@@ -58,7 +53,6 @@ function rect(el: Pointer): ScreenRect | null {
   return [Math.round(p.x), Math.round(p.y), Math.round(s.width), Math.round(s.height)]
 }
 
-// 角色名换成 UI Automation 的控件类型名，uipick.ts 的中文标签和空壳判断按它走
 const CONTROL: Record<string, string> = {
   AXWindow: 'Window', AXSheet: 'Window', AXDialog: 'Window', AXTextArea: 'Document', AXWebArea: 'Document', AXTextField: 'Edit',
   AXComboBox: 'Edit', AXSearchField: 'Edit', AXStaticText: 'Text', AXHeading: 'Text', AXList: 'List', AXOutline: 'List', AXBrowser: 'List',
@@ -106,7 +100,6 @@ function windowRect(el: Pointer) {
   return isType(win, TYPE.axElement) ? rect(win) : null
 }
 
-/** 很长的文字（终端、长文档）只取屏幕上看得见的那段 */
 function visibleText(el: Pointer) {
   const range = attr(el, 'AXVisibleCharacterRange')
   if (!isType(range, TYPE.axValue)) return undefined
@@ -118,7 +111,6 @@ function visibleText(el: Pointer) {
   return toString(hold(out[0]))
 }
 
-/** 控件自身的文字：值，否则子孙控件的值和名字拼起来 */
 function textOf(el: Pointer) {
   const value = str(el, 'AXValue')
   if (value) return value.length > MAX_TEXT ? (visibleText(el) || value.slice(-MAX_TEXT)) : value

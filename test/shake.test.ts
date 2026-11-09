@@ -16,7 +16,6 @@ test('jitter smaller than the amplitude is ignored', () => {
 })
 
 test('a swing is measured from the farthest point reached, not from where it turned', () => {
-  // 一路走到 100 才往回：回到 70 只退了 30，回到 40 才够 60
   assert.equal(countReversals([0, 50, 100, 70], 40), 0)
   assert.equal(countReversals([0, 50, 100, 70, 40], 40), 1)
 })

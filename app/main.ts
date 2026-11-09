@@ -1,10 +1,3 @@
-// Pointy 主进程：把几块接起来，自己不做具体的事
-//   pick/       晃一下鼠标 → 指认 / 取选区，交出"抓到的东西"
-//   ui/cards    卡片和胶囊：显示抓到的东西，问当前 agent，流式显示回答
-//   agents/     卡片背后的 agent（现在只有 DSH），把通用请求翻译成各家的样子
-//   browser/    浏览器扩展：配对、网页里的指认、切标签页
-//   server.js   本机 WebSocket 服务，agent 桥和扩展都连这里
-//   ui/tray、ui/notices  托盘、提示窗、开场动画
 import { app, globalShortcut } from 'electron'
 import { PORT, TEST_HIDDEN, logError } from './core/env.ts'
 import * as state from './core/state.ts'
@@ -20,14 +13,12 @@ import { startServer } from './server.ts'
 
 process.on('uncaughtException', (err) => logError('uncaught', err))
 process.on('unhandledRejection', (err) => logError('unhandled-rejection', err))
-// 卡片和其他窗口里的报错、渲染进程崩掉，也只记日志
 app.on('web-contents-created', (_e, wc) => {
   wc.on('console-message', (e) => { if (e.level === 'error') logError('renderer', `${e.message} (${e.sourceId}:${e.lineNumber})`) })
   wc.on('render-process-gone', (_e, details) => logError('render-process-gone', JSON.stringify(details)))
   wc.on('preload-error', (_e, preloadPath, err) => logError('preload', `${preloadPath}: ${(err as Error | undefined)?.stack ?? err}`))
 })
 
-/** 测试钩子：POINTY_TEST_HIDDEN / POINTY_TEST_HOOKS 时挂在 global 上，经 --inspect 调用 */
 declare global {
   var pointyTest: (Record<string, unknown> & { allowPairAsk?: boolean }) | undefined
 }
@@ -45,9 +36,7 @@ if (process.env.POINTY_PORT) app.setPath('userData', `${app.getPath('userData')}
 if (!app.requestSingleInstanceLock()) app.exit(0)
 
 app.whenReady().then(() => {
-  // 只在菜单栏放图标，不占程序坞
   app.dock?.hide()
-  // 上次指认中途崩溃的话系统光标还是鲸鱼娘，启动时先恢复成用户自己的
   if (!TEST_HIDDEN) os.restoreCursor(true)
   if (!TEST_HIDDEN) extensions.syncUserExtension()
 
@@ -95,7 +84,6 @@ app.whenReady().then(() => {
       greetOnStart: notices.greetOnStart,
       showIntro: notices.showIntro,
       showExtensionGuide: notices.showExtensionGuide,
-      extensionGrabFor: extensions.grabFor,
       extensionCount: extensions.count,
       lastPickTab: extensions.lastPickTab,
       abortPick: extensions.abortPick,

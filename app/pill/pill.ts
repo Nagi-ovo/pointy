@@ -1,4 +1,3 @@
-// 主进程给整份列表，这里照着画；点胶囊放回卡片，× 不看了
 const list = document.getElementById('list')!
 const rows = new Map<string, HTMLElement>()
 
@@ -12,7 +11,6 @@ function row(p: PillItem) {
 }
 
 function fit() {
-  // 等动画的那帧量不准，下一帧再报高度
   requestAnimationFrame(() => window.pill.resize(Math.ceil(list.getBoundingClientRect().height)))
 }
 

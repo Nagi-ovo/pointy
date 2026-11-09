@@ -1,5 +1,3 @@
-// 不开 DSH 也能测Pointy：冒充 pointy-bridge 连上来，按顺序推一遍状态和一次批准
-// 用法：node tools/fake-plugin.ts [间隔毫秒]
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -15,7 +13,6 @@ const send = (m: object) => ws.send(JSON.stringify(m))
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const sid = 'session-fake'
 
-/** 宠物发给插件的消息，这里只看用到的字段 */
 type PetMessage =
   | { type: 'challenge', nonce: string }
   | { type: 'hello-ok', proof: string }
