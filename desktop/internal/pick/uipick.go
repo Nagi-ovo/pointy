@@ -80,6 +80,8 @@ func (h *Held) Shift(dx, dy float64) { h.overlay.Shift(dx, dy) }
 // nativePick is a control read in full, with its pictures.
 type nativePick struct {
 	element desktop.ElementReply
+	// window is the picked control's window, empty when unknown.
+	window  desktop.Foreground
 	image   string
 	wide    string
 	focused bool
@@ -348,6 +350,7 @@ func (s *session) read(ctx context.Context, at desktop.Point, level int, zoom fl
 	}
 	sh := shape{Class: el.ClassName, Type: el.Control, Rect: el.Rect, Win: el.Win, Kids: el.Kids, Readable: el.Readable}
 	p := &nativePick{element: el}
+	p.window, _ = s.d.Desktop.WindowAt(el.PID, at)
 	p.opaque = isOpaque(sh) && (isWholeWindow(sh) || strings.TrimSpace(el.Text) == "")
 	if el.Rect == nil {
 		return p, nil

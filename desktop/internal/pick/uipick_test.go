@@ -23,6 +23,7 @@ type fakeDesktop struct {
 	gate       chan struct{}
 	events     chan desktop.Button
 	hookErr    error
+	windows    map[int]desktop.Foreground
 
 	mu        sync.Mutex
 	readUp    int
@@ -38,6 +39,12 @@ type fakeDesktop struct {
 func (f *fakeDesktop) Cursor() desktop.Point { return desktop.Point{X: 500, Y: 300} }
 func (f *fakeDesktop) Foreground() (desktop.Foreground, error) {
 	return desktop.Foreground{ID: 42}, nil
+}
+func (f *fakeDesktop) WindowAt(pid int, _ desktop.Point) (desktop.Foreground, error) {
+	if w, ok := f.windows[pid]; ok {
+		return w, nil
+	}
+	return desktop.Foreground{}, errors.ErrUnsupported
 }
 func (f *fakeDesktop) PointAt(context.Context, desktop.Point) (desktop.PointReply, error) {
 	return f.chain, nil
