@@ -1,3 +1,5 @@
+/// <reference path="../../app/types.d.ts" />
+
 const KIND_LABEL: Record<string, string> = {
   comment: '评论', 'issue-body': 'Issue', 'ui-element': '界面元素', 'video-card': '视频', 'code-line': '代码', image: '图片', video: '视频', code: '代码',
   'table-row': '表格行', heading: '标题', link: '链接', paragraph: '段落', block: '内容块', selection: '选区',
@@ -51,3 +53,5 @@ export function composeFollowUp({ question, mode, modeChanged }: { question: str
   const switched = modeChanged ? (mode === 'quick' ? QUICK_ANSWER : FULL_ANSWER) : ''
   return [switched, question].filter(Boolean).join('\n\n')
 }
+
+export const composeAsk = (ask: Pick<AskRequest, 'material' | 'question' | 'mode' | 'followUp' | 'modeChanged'>) => ask.followUp ? composeFollowUp(ask) : composeFirst(ask)
