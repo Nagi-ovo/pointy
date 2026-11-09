@@ -106,8 +106,17 @@ function elevatedUnderCursor() {
 }
 
 /** 前台窗口：标题、进程名 */
-function foreground() {
-  const hwnd = GetForegroundWindow()
+const foreground = () => windowInfo(GetForegroundWindow())
+
+/** 鼠标下面那个程序窗口（顶层窗口）：和 foreground() 一样的字段 */
+function underCursor() {
+  const pt = {}
+  if (!GetCursorPos(pt)) return windowInfo(null)
+  const hwnd = WindowFromPoint(pt)
+  return windowInfo(hwnd ? GetAncestor(hwnd, GA_ROOT) ?? hwnd : null)
+}
+
+function windowInfo(hwnd) {
   if (!hwnd) return { title: '', exe: '', exePath: '' }
   const buf = Buffer.alloc(1024)
   const title = utf16(buf, GetWindowTextW(hwnd, buf, 512))
@@ -240,7 +249,7 @@ async function grabSelection(extensionGrabFor, { allowCopy = true } = {}) {
 }
 
 module.exports = {
-  grabSelection, foreground, blockedReason, elevatedUnderCursor, isElevated, copySelection, NO_COPY_EXES, BROWSERS,
+  grabSelection, foreground, underCursor, blockedReason, elevatedUnderCursor, isElevated, copySelection, NO_COPY_EXES, BROWSERS,
   uiaRequest: (command, timeoutMs) => uia.request(command, timeoutMs),
   stopSelectionHelper: () => uia.stop(),
 }

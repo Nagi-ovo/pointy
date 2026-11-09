@@ -64,7 +64,7 @@ app.whenReady().then(() => {
     tray.create({ agent: agents.current, extensionCount: extensions.count, showExtensionGuide: notices.showExtensionGuide, showWelcome: notices.showWelcome })
   }
   pick.start({
-    onGrab: (grab, release) => cards.openCard(grab, release),
+    onGrab: (grab, release, owner) => cards.openCard(grab, release, owner),
     showHint: notices.showHint,
     browser: extensions,
     cardFocused: cards.focused,
