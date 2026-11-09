@@ -28,6 +28,7 @@ type control struct {
 	class    string
 	rect     *desktop.Rect
 	password bool
+	pid      int
 }
 
 // controlTypes are UIA's control type ids from 50000 (UIA_ButtonControlTypeId)
@@ -82,11 +83,11 @@ func smallestAt(rects []*desktop.Rect, x, y float64) int {
 	return best
 }
 
-var space = regexp.MustCompile(`\s+`)
+var whitespace = regexp.MustCompile(`\s+`)
 
 // oneLine collapses whitespace and keeps the first n characters.
 func oneLine(s string, n int) string {
-	return clip(space.ReplaceAllString(s, " "), n)
+	return clip(whitespace.ReplaceAllString(s, " "), n)
 }
 
 // clip keeps the first n characters of s.
@@ -154,6 +155,7 @@ func elementReply(c control, kids, readable bool, win *desktop.Rect, text, value
 		Readable:  readable,
 		Win:       win,
 		Text:      clip(strings.TrimSpace(text), maxText),
+		PID:       c.pid,
 	}
 	if c.typeID == typeHyperlink && webURL.MatchString(value) {
 		r.Href = value
