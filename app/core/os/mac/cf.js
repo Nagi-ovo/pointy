@@ -83,11 +83,17 @@ const objc_getClass = objc.func('void *objc_getClass(const char *name)')
 const sel_registerName = objc.func('void *sel_registerName(const char *name)')
 const msgPtr = objc.func('void *objc_msgSend(void *self, void *sel)')
 const msgInt = objc.func('int64 objc_msgSend(void *self, void *sel)')
+const msgOrder = objc.func('void objc_msgSend(void *self, void *sel, long mode, long relativeTo)')
+/** Electron 窗口背后的 NSWindow（getNativeWindowHandle 给的是它的 NSView） */
+const nsWindow = (win) => msgPtr(koffi.decode(win.getNativeWindowHandle(), 'void *'), sel_registerName('window'))
+const NSWindowAbove = 1
+/** 把窗口排到另一个窗口（可以是别的程序的）正上方 */
+const orderAbove = (win, windowNumber) => msgOrder(nsWindow(win), sel_registerName('orderWindow:relativeTo:'), NSWindowAbove, Number(windowNumber))
 const send = (target, sel) => msgPtr(typeof target === 'string' ? objc_getClass(target) : target, sel_registerName(sel))
 const sendInt = (target, sel) => Number(msgInt(typeof target === 'string' ? objc_getClass(target) : target, sel_registerName(sel)))
 
 module.exports = {
   koffi, CF, CG, AX, libSystem, CGPoint, CGSize, CGRect, CFRange, TYPE,
   constant, cfstr, isType, toString, toNumber, toArray, dictGet, CFRelease, CFBooleanGetValue, CFURLGetString,
-  send, sendInt,
+  send, sendInt, orderAbove,
 }

@@ -3,7 +3,7 @@
 const { screen, systemPreferences } = require('electron')
 const { spawn } = require('node:child_process')
 const path = require('node:path')
-const { koffi, CF, CG, libSystem, CGRect, constant, toString, toNumber, toArray, dictGet, CFRelease, send, sendInt } = require('./mac/cf')
+const { koffi, CF, CG, libSystem, CGRect, constant, toString, toNumber, toArray, dictGet, CFRelease, send, sendInt, orderAbove } = require('./mac/cf')
 
 // ---------- 窗口列表 ----------
 const CGWindowListCopyWindowInfo = CG.func('void *CGWindowListCopyWindowInfo(uint32 option, uint32 relativeTo)')
@@ -58,8 +58,37 @@ const windowId = (win) => BigInt(win.getMediaSourceId().split(':')[1] ?? 0)
 const foregroundId = () => frontWindow()?.id ?? 0n
 // Mac 上被唤起的程序自己能到前台，不用放行
 const allowAnyForeground = () => {}
-// 别的程序的窗口当不了 Pointy 窗口的父窗口：返回 false，调用方自己置顶
-const attachToOwner = () => false
+// 别的程序的窗口当不了 Pointy 窗口的父窗口，改成模仿 Windows 的效果：窗口留在普通层，
+// 来源程序在前台时把挂在它上面的窗口按出现顺序排到它正上方；切到别的程序，那个程序的窗口自然盖住它们
+const STACK_POLL_MS = 100
+/** 来源窗口编号 → 挂在它上面的 Pointy 窗口，先挂的在下面 */
+const attached = new Map()
+let stackTimer
+
+function restack() {
+  const pid = frontmostPid()
+  const onScreen = windows()
+  const index = new Map(onScreen.map((w, i) => [w.id, i]))
+  for (const [owner, list] of attached) {
+    const live = list.filter((w) => !w.isDestroyed())
+    if (!live.length || !index.has(owner)) { attached.delete(owner); continue }
+    attached.set(owner, live)
+    if (onScreen[index.get(owner)].pid !== pid) continue
+    const shown = live.filter((w) => w.isVisible())
+    // 越靠前编号越小；有一个落到来源窗口后面了才重排，平时不动
+    if (!shown.some((w) => (index.get(windowId(w)) ?? Infinity) > index.get(owner))) continue
+    let below = owner
+    for (const w of shown) { orderAbove(w, below); below = windowId(w) }
+  }
+  if (!attached.size) { clearInterval(stackTimer); stackTimer = undefined }
+}
+
+function attachToOwner(win, owner) {
+  win.setAlwaysOnTop(false)
+  attached.set(owner, [...(attached.get(owner) ?? []), win])
+  stackTimer ??= setInterval(restack, STACK_POLL_MS)
+  return true
+}
 
 function windowOrigin(id) {
   const b = windows(kCGWindowListOptionIncludingWindow, Number(id))[0]?.bounds

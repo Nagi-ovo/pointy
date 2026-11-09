@@ -73,7 +73,6 @@ function openCard(init, releasePick) {
     self.releasePick?.()
     cards.delete(self)
   })
-  // macOS 挂不到别的程序下面：照旧置顶，但仍跟着来源窗口挪
   let attached = false
   try { attached = !!owner && os.attachToOwner(self, owner) } catch (err) { logError('card-owner', err) }
   if (owner) followOwner(self, owner)
