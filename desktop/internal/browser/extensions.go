@@ -4,13 +4,16 @@
 package browser
 
 import (
+	"cmp"
 	"encoding/json/v2"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/pointylab/pointy/desktop/internal/config"
+	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/server"
 )
 
@@ -22,6 +25,10 @@ type Deps struct {
 	BundledDir string
 	OnChange   func()
 	Log        func(kind string, err any)
+	// ShowNotice asks the user, as ui.UI.ShowNotice does.
+	ShowNotice func(contract.NoticeInit, time.Duration) (choice <-chan *string, cancel func())
+	// OnSelection opens a card on what the user sent from the browser.
+	OnSelection func(contract.Grab)
 }
 
 type extension struct {
@@ -33,12 +40,14 @@ type extension struct {
 type Extensions struct {
 	deps Deps
 
-	mu    sync.Mutex
-	conns map[string]extension
+	mu      sync.Mutex
+	conns   map[string]extension
+	denied  map[string]bool
+	pairing bool
 }
 
 func New(d Deps) *Extensions {
-	return &Extensions{deps: d, conns: map[string]extension{}}
+	return &Extensions{deps: d, conns: map[string]extension{}, denied: map[string]bool{}}
 }
 
 // UserDir is where the user loads the unpacked extension from. It stays put
@@ -114,7 +123,22 @@ type handler struct {
 	conn *server.Conn
 }
 
-func (h *handler) OnMessage(server.Message) {}
+func (h *handler) OnMessage(m server.Message) {
+	if m.Type != "selection" || h.e.deps.OnSelection == nil {
+		return
+	}
+	var sel struct {
+		contract.Grab
+		Browser string `json:"browser"`
+	}
+	if m.Decode(&sel) != nil {
+		return
+	}
+	g := sel.Grab
+	g.Source = contract.GrabSource{App: cmp.Or(sel.Browser, "browser"), Title: g.PageTitle}
+	g.Method = contract.MethodExtension
+	h.e.deps.OnSelection(g)
+}
 
 func (h *handler) OnClosed() {
 	e := h.e

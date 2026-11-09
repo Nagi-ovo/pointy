@@ -1,36 +1,16 @@
+/// <reference path="./bridge/runtime.d.ts" />
+
 type ScreenRect = [number, number, number, number]
 
-interface GrabSource { app: string; title: string }
-interface GrabLink { text: string; href: string }
-interface GrabImage { alt: string; src: string }
-interface GrabElement {
-  kind: string
-  site?: string
-  tag?: string
-  text?: string
-  fields?: Record<string, string>
-  page?: Record<string, string>
-  links?: GrabLink[]
-  images?: GrabImage[]
-}
-type GrabMethod = 'pick' | 'uia-pick' | 'extension' | 'uia' | 'clipboard' | 'none'
-interface GrabNote { text: string; install: boolean }
-interface Grab {
-  mode?: undefined
-  source: GrabSource
-  method: GrabMethod
-  text?: string
-  url?: string
-  pageTitle?: string
-  element?: GrabElement
-  image?: string
-  wideImage?: string
-  shotKind?: 'focus' | 'element'
-  before?: string
-  after?: string
-  note?: GrabNote
-  blocked?: string
-}
+// Data that crosses between Go and the pages is declared in Go
+// (desktop/internal/contract) and generated into bridge/mygo.ts.
+type GrabSource = import('./bridge/mygo.ts').GrabSource
+type GrabLink = import('./bridge/mygo.ts').GrabLink
+type GrabImage = import('./bridge/mygo.ts').GrabImage
+type GrabElement = import('./bridge/mygo.ts').GrabElement
+type GrabMethod = import('./bridge/mygo.ts').GrabMethod
+type GrabNote = import('./bridge/mygo.ts').GrabNote
+type Grab = import('./bridge/mygo.ts').Grab & { mode?: undefined }
 
 interface PairCard { mode: 'pair'; code: string }
 type CardInit = PairCard | { mode?: undefined; grab: Grab; agent: { name: string } }
@@ -99,20 +79,20 @@ type AgentEvent =
   | { type: 'ask-accepted'; askId: string; sessionId: string; title?: string }
   | { type: 'ask-step'; askId: string }
   | { type: 'ask-delta'; askId: string; text: string }
-  | { type: 'ask-activity'; askId: string; text: string; tool?: unknown; detail?: unknown }
+  | { type: 'ask-activity'; askId: string; text: string }
   | { type: 'ask-done'; askId: string; sessionId?: string; reason: string; title?: string }
   | { type: 'ask-error'; askId: string; sessionId?: string; error: string }
 
-type PillState = 'run' | 'done' | 'error'
-interface KeepInfo { sessionId?: string; title: string; state: PillState; fixedTitle: boolean }
-interface PillItem { id: string; title: string; state: PillState }
+type PillState = import('./bridge/mygo.ts').PillState
+type KeepInfo = import('./bridge/mygo.ts').KeepInfo
+type PillItem = import('./bridge/mygo.ts').PillItem
 
 interface NoticeButton { id: string; label: string; primary?: boolean }
 type NoticeParagraph = string | { text: string; copy: string[] }
 interface NoticeInit { title: string; body: NoticeParagraph[]; buttons?: NoticeButton[] }
-interface IntroInit { version: string }
-interface LocalRect { x: number; y: number; width: number; height: number }
-interface OverlayHighlight extends LocalRect { label: string; focus: LocalRect | null }
+type IntroInit = import('./bridge/mygo.ts').IntroInit
+type LocalRect = import('./bridge/mygo.ts').LocalRect
+type OverlayHighlight = import('./bridge/mygo.ts').OverlayHighlight
 
 interface A11yChainItem { rect: ScreenRect | null; control: string; cls?: string; name?: string; opaque?: boolean }
 interface A11yGrabReply { ok: boolean; isPassword?: boolean; control?: string; text?: string; error?: string }

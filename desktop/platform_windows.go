@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/pointylab/pointy/desktop/internal/desktop"
-	"github.com/pointylab/pointy/desktop/internal/desktop/windows"
+	win "github.com/pointylab/pointy/desktop/internal/desktop/windows"
 )
 
-func newDesktop() desktop.Desktop { return windows.New() }
+func newDesktop() desktop.Desktop { return win.New() }
