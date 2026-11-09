@@ -1,6 +1,13 @@
-import { renderMarkdown } from './markdown.js'
+import { renderMarkdown } from './markdown.ts'
 
-const $ = (id) => document.getElementById(id)
+// 卡片页面里写死的元素；不在表里的按 HTMLElement 算
+interface CardElements {
+  input: HTMLTextAreaElement
+  send: HTMLButtonElement
+  target: HTMLButtonElement
+  model: HTMLButtonElement
+}
+const $ = <K extends string>(id: K) => document.getElementById(id) as K extends keyof CardElements ? CardElements[K] : HTMLElement
 const quote = $('quote')
 const input = $('input')
 const thread = $('thread')
@@ -10,18 +17,18 @@ const suggestBox = $('suggest')
 
 const MAX_WINDOW_HEIGHT = 640
 
-let ctxItems = [] // { label, text }：来源、网址这些周边信息，不显示，第一问时一起发
+let ctxItems: CtxItem[] = [] // 来源、网址这些周边信息，不显示，第一问时一起发
 let selection = ''
-let image // 指到那块的截图（data URL，只在内存里）
-let wideImage // 第二张：空壳程序（QQ、网易云）里是大框整块，其他程序是整个窗口
-let shotKind = 'element' // 第一张是什么：focus = 鼠标附近那块，element = 指到的控件
-let element // 指认到的元素（浏览器扩展给的结构化信息）
-let askId
+let image: string | undefined // 指到那块的截图（data URL，只在内存里）
+let wideImage: string | undefined // 第二张：空壳程序（QQ、网易云）里是大框整块，其他程序是整个窗口
+let shotKind: 'focus' | 'element' = 'element' // 第一张是什么：focus = 鼠标附近那块，element = 指到的控件
+let element: GrabElement | undefined // 指认到的元素（浏览器扩展给的结构化信息）
+let askId: string | undefined
 let finished = false // 这一问已经结束；之后晚到的增量不再改状态
-let sessionId // 第一次发出去之后，后续追问都发到这个会话
+let sessionId: string | undefined // 第一次发出去之后，后续追问都发到这个会话
 let sessionTitle = ''
 let asked = false // 问过一次之后就不再显示建议
-let reply // { el, text } 当前正在写的回答
+let reply: { el: HTMLElement; text: string } | undefined // 当前正在写的回答
 let allText = '' // 所有回答拼起来，复制用
 
 let agentName = 'AI' // 卡片背后的 agent 叫什么（"在 XX 里继续"这类文字用），初始化时主进程给
@@ -34,14 +41,14 @@ const KEEP_AS_IS = new Set(['code', 'code-line', 'selection'])
 const STAT_LINE = /^[\d.,]+\s*[KkMmWw万亿]?$/ // 点赞、转发、播放数这类互动数字
 const SENTENCE_END = /[。！？.!?：:；;，,]$/
 
-function cleanText(text) {
+function cleanText(text: string) {
   const lines = text.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l && !STAT_LINE.test(l))
   // 连着的几行都很短（作者名、@、时间这种）就并成一行
-  const out = []
+  const out: string[] = []
   for (const line of lines) {
     const prev = out[out.length - 1]
-    const short = (l) => l.length <= 16 && !l.startsWith('[图:') && !SENTENCE_END.test(l)
-    if (prev !== undefined && short(line) && prev.length + line.length < 32 && short(prev.split(' ').pop()) && !prev.startsWith('[图:')) out[out.length - 1] = `${prev} ${line}`
+    const short = (l: string) => l.length <= 16 && !l.startsWith('[图:') && !SENTENCE_END.test(l)
+    if (prev !== undefined && short(line) && prev.length + line.length < 32 && short(prev.split(' ').pop()!) && !prev.startsWith('[图:')) out[out.length - 1] = `${prev} ${line}`
     else out.push(line)
   }
   return out.join('\n')
@@ -52,12 +59,12 @@ const NOISE_IMAGE = /profile_images|avatar|emoji|icon|face|badge/i
 // 帖子、评论、issue 本身的链接排前面
 const OWN_LINK = /\/status\/|\/post|\/comment|\/issues?\/|\/pull\/|\/video\/|\/p\/|\/answer\/|#/i
 
-function usefulImages(images = []) {
+function usefulImages(images: GrabImage[] = []) {
   return images.filter(i => i.alt && !NOISE_IMAGE.test(i.src)).slice(0, 3)
 }
 
-function usefulLinks(links = []) {
-  const seen = new Set()
+function usefulLinks(links: GrabLink[] = []) {
+  const seen = new Set<string>()
   const list = links.filter(l => l.text && !seen.has(l.href) && seen.add(l.href))
   return [...list.filter(l => OWN_LINK.test(l.href)), ...list.filter(l => !OWN_LINK.test(l.href))].slice(0, 2)
 }
@@ -66,7 +73,7 @@ function usefulLinks(links = []) {
  * 交给 agent 的材料：指到的东西整理好（去过噪音、用户点 × 去掉的不带），怎么拼成一段话由 agent 那边决定
  * （app/agents/compose.js）。截图本身另外随第一问发，这里只说有没有
  */
-function material() {
+function material(): Material {
   return {
     site: element?.site,
     kind: element?.kind,
@@ -81,15 +88,15 @@ function material() {
 // ---------- 快答 / 完整 ----------
 // 快答：让 agent 直接简短回答；完整：不加限制。具体怎么跟 agent 说由 agent 那边定
 const MODE_KEY = 'pointy.answerMode'
-let mode = (() => { try { return localStorage.getItem(MODE_KEY) === 'deep' ? 'deep' : 'quick' } catch { return 'quick' } })()
-let sentMode // 这张卡片上一条发出去的消息是哪一档
+let mode: AnswerMode = (() => { try { return localStorage.getItem(MODE_KEY) === 'deep' ? 'deep' : 'quick' } catch { return 'quick' } })()
+let sentMode: AnswerMode | undefined // 这张卡片上一条发出去的消息是哪一档
 
 function renderMode() {
-  for (const b of document.querySelectorAll('#mode button')) b.classList.toggle('on', b.dataset.mode === mode)
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#mode button')) b.classList.toggle('on', b.dataset.mode === mode)
 }
-for (const b of document.querySelectorAll('#mode button')) {
+for (const b of document.querySelectorAll<HTMLButtonElement>('#mode button')) {
   b.addEventListener('click', () => {
-    mode = b.dataset.mode
+    mode = b.dataset.mode as AnswerMode
     try { localStorage.setItem(MODE_KEY, mode) } catch {}
     renderMode()
     renderModel()
@@ -100,9 +107,9 @@ renderMode()
 
 // ---------- 高度：跟着内容走，最高 640 ----------
 // 对话区被压扁时 scrollHeight 不准，直接把里面每一块的高度加起来
-function contentHeight(el) {
+function contentHeight(el: HTMLElement) {
   let h = 0
-  for (const c of el.children) {
+  for (const c of el.children as HTMLCollectionOf<HTMLElement>) {
     const m = getComputedStyle(c)
     if (m.display === 'none') continue
     h += c.offsetHeight + Math.max(0, parseFloat(m.marginTop)) + parseFloat(m.marginBottom)
@@ -115,7 +122,7 @@ function fitHeight() {
   const style = getComputedStyle(card)
   const pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
   let h = pad
-  for (const el of card.children) {
+  for (const el of card.children as HTMLCollectionOf<HTMLElement>) {
     const m = getComputedStyle(el)
     if (el.hidden || m.display === 'none' || m.position === 'absolute') continue
     h += (el === thread ? contentHeight(el) : el.offsetHeight) + parseFloat(m.marginTop) + parseFloat(m.marginBottom)
@@ -132,22 +139,22 @@ function autoGrow() {
   fitHeight()
 }
 
-function setStatus(kind, title) {
+function setStatus(kind: string, title: string) {
   status.className = kind
   status.title = title
   $('close').title = kind === 'running' ? `关掉，${agentName} 在后台接着做（Esc）` : '关闭（Esc）'
-  setMascot({ running: 'think', done: 'done', error: 'error' }[kind] ?? 'idle')
+  setMascot(({ running: 'think', done: 'done', error: 'error' } as Record<string, string>)[kind] ?? 'idle')
 }
 
 // ---------- 看板娘：跟着状态换表情，待机和干活时隔几秒眨一下眼 ----------
 // 图换了只改这张表；没有的表情退回 idle
-const MASCOT = { idle: 'idle.png', blink: 'blink.png', think: 'think.png', done: 'done.png', error: 'error.png', peek: 'peek.png' }
+const MASCOT: Record<string, string> = { idle: 'idle.png', blink: 'blink.png', think: 'think.png', done: 'done.png', error: 'error.png', peek: 'peek.png' }
 const mascot = $('mascot')
-const mascotImg = mascot.querySelector('img')
+const mascotImg = mascot.querySelector('img')!
 let mood = ''
-let blinkTimer
-function mascotFrame(name) { mascotImg.src = `mascot/${MASCOT[name] ?? MASCOT.idle}` }
-function setMascot(next) {
+let blinkTimer: number | undefined
+function mascotFrame(name: string) { mascotImg.src = `mascot/${MASCOT[name] ?? MASCOT.idle}` }
+function setMascot(next: string) {
   if (next === mood) return
   // 卡片刚弹出：先探个头，再整个人出来
   if (!mood && next === 'idle') {
@@ -171,9 +178,9 @@ function scheduleBlink() {
 }
 
 // ---------- 建议 ----------
-const pendingSuggest = new Map()
+const pendingSuggest = new Map<string, (msg: { suggestions?: Suggestion[] }) => void>()
 
-function showSuggestions(list) {
+function showSuggestions(list: Suggestion[]) {
   suggestBox.replaceChildren(...list.slice(0, 2).map((s) => {
     const b = document.createElement('button')
     b.type = 'button'
@@ -189,7 +196,7 @@ async function loadSuggestions() {
   suggestBox.hidden = false
   fitHeight()
   const reqId = newId()
-  const result = await new Promise((resolve) => {
+  const result = await new Promise<{ suggestions?: Suggestion[] }>((resolve) => {
     const timer = setTimeout(() => resolve({ suggestions: [] }), 12_000)
     pendingSuggest.set(reqId, (msg) => { clearTimeout(timer); resolve(msg) })
     window.card.send({ type: 'suggest-request', reqId, material: material() }).then((ok) => { if (!ok) { clearTimeout(timer); resolve({ suggestions: [] }) } })
@@ -205,26 +212,26 @@ async function loadSuggestions() {
 // 以前是「DSH 当前会话 5 分钟内用过就插进去」，连着看不同网页时问题会串进不相干的对话
 const SAME_PAGE_MS = 5 * 60 * 1000
 const LAST_ASK_KEY = 'pointy.lastAsk' // { page, sessionId, at }：最近一次从哪一页问到了哪个会话
-const pendingSessions = new Map()
+const pendingSessions = new Map<string, (res: SessionsReply) => void>()
 const targetLabel = $('target-label')
 const menu = $('target-menu')
 // 下拉挂在 body 上，不在卡片里面，这样不会被卡片的圆角裁掉，能盖到卡片下面去
 document.body.append(menu)
 
-let sessions = [] // 最近 5 个会话 { sessionId, title, updatedAt, running, workspace }
-const known = new Map() // 见过的会话（最近的 + 搜到的），选中的会话从这里查
-let workspaces = [] // { id, title }，新任务能放进的工作区
-let defaultWorkspaceId
-let workspaceId // 新任务放进哪个工作区，全局记住
+let sessions: SessionInfo[] = [] // 最近 5 个会话
+const known = new Map<string, SessionInfo>() // 见过的会话（最近的 + 搜到的），选中的会话从这里查
+let workspaces: Workspace[] = [] // 新任务能放进的工作区
+let defaultWorkspaceId: string | undefined
+let workspaceId: string | null | undefined // 新任务放进哪个工作区，全局记住
 const WORKSPACE_KEY = 'pointy.workspace'
-let currentId // agent 里"当前"的会话
+let currentId: string | undefined // agent 里"当前"的会话
 let targetValue = 'new' // 'new' 或 sessionId
 let pageKey = '' // 这张卡片指的是哪一页：网址（去掉 #）或「程序名|窗口标题」
 
 // agent 给的标题都能直接显示（它自己的临时标题在适配那边滤掉了）；没标题的是还没起好
-const titleOf = (s) => s.title || '还没起标题的会话'
-const trunc = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
-function ago(ms) {
+const titleOf = (s: SessionInfo) => s.title || '还没起标题的会话'
+const trunc = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+function ago(ms: number | undefined) {
   const d = Date.now() - Number(ms)
   if (!Number.isFinite(d) || d < 0) return ''
   if (d < 60_000) return '刚刚'
@@ -232,11 +239,11 @@ function ago(ms) {
   if (d < 86_400_000) return `${Math.floor(d / 3_600_000)} 小时前`
   return `${Math.floor(d / 86_400_000)} 天前`
 }
-const metaOf = (s) => (s.running ? '运行中' : ago(s.updatedAt))
+const metaOf = (s: SessionInfo) => (s.running ? '运行中' : ago(s.updatedAt))
 const workspaceTitle = () => workspaces.find(w => w.id === workspaceId)?.title ?? '默认工作区'
 
 function defaultTarget() {
-  let last
+  let last: { page: string; sessionId: string; at: number } | null | undefined
   try { last = JSON.parse(localStorage.getItem(LAST_ASK_KEY) ?? 'null') } catch {}
   if (!last || !pageKey || last.page !== pageKey || Date.now() - Number(last.at) > SAME_PAGE_MS) return 'new'
   const s = known.get(last.sessionId)
@@ -244,7 +251,7 @@ function defaultTarget() {
 }
 
 /** 记下这一页问到了哪个会话：同一页 5 分钟内再问，默认接着它 */
-function rememberAsk(id) {
+function rememberAsk(id: string | undefined) {
   if (!pageKey || !id) return
   try { localStorage.setItem(LAST_ASK_KEY, JSON.stringify({ page: pageKey, sessionId: id, at: Date.now() })) } catch {}
 }
@@ -263,33 +270,33 @@ function renderTarget() {
   // 正要插进某个会话时，旁边给个 + 一下改成新对话；已经是新任务或者问过了就不显示
   $('new-task').hidden = !s || $('target').disabled
 }
-$('new-task').addEventListener('click', () => { setTarget('new', true); input.focus() })
+$('new-task').addEventListener('click', () => { setTarget('new'); input.focus() })
 
-function setTarget(value) {
+function setTarget(value: string) {
   targetValue = value
   renderTarget()
   syncModelBase()
 }
 
 // 下拉：顶上搜索框；空着显示最近 5 个，输入后搜标题（agent 支持的话也搜聊过的内容）。新任务那行可以换工作区
-function opt(value, name, meta, running, sub) {
+function opt(value: string, name: string, meta: string, running?: boolean, sub?: string) {
   const b = document.createElement('button')
   b.type = 'button'
   b.className = 'opt'
   b.innerHTML = '<span class="tick"></span><span class="body"><span class="name"></span><span class="sub"></span></span><span class="meta"></span>'
-  b.querySelector('.tick').textContent = value === targetValue ? '✓' : ''
-  b.querySelector('.name').textContent = name
-  b.querySelector('.sub').textContent = sub ?? ''
-  b.querySelector('.meta').textContent = meta
-  if (running) b.querySelector('.meta').classList.add('running')
-  b.addEventListener('click', () => { setTarget(value, true); closeMenu(); input.focus() })
+  b.querySelector('.tick')!.textContent = value === targetValue ? '✓' : ''
+  b.querySelector('.name')!.textContent = name
+  b.querySelector('.sub')!.textContent = sub ?? ''
+  b.querySelector('.meta')!.textContent = meta
+  if (running) b.querySelector('.meta')!.classList.add('running')
+  b.addEventListener('click', () => { setTarget(value); closeMenu(); input.focus() })
   return b
 }
 
-let menuList // 会话那几行
-let menuSearch
+let menuList!: HTMLElement // 会话那几行
+let menuSearch!: HTMLInputElement
 let searchSeq = 0
-let searchTimer
+let searchTimer: number | undefined
 
 // 最近 5 个；之前从搜索里挑的会话不在里面就放最上面，好看出现在选的是哪个
 function recentRows() {
@@ -297,8 +304,8 @@ function recentRows() {
   return picked && !sessions.some(x => x.sessionId === targetValue) ? [picked, ...sessions] : sessions
 }
 
-function fillList(items, searching, note) {
-  const rows = items.map(s => opt(
+function fillList(items: SessionInfo[], searching: boolean, note?: string) {
+  const rows: HTMLElement[] = items.map(s => opt(
     s.sessionId,
     `${!searching && s.sessionId === currentId ? '当前 · ' : ''}${titleOf(s)}`,
     metaOf(s),
@@ -313,8 +320,8 @@ function fillList(items, searching, note) {
 }
 
 // 方向键在列表里挪，Enter 选；没在搜、也没按方向键时不预先高亮
-function focusOpt(i, force) {
-  const all = [...menu.querySelectorAll('.opt')].filter(b => b.offsetParent !== null)
+function focusOpt(i: number, force?: boolean) {
+  const all = [...menu.querySelectorAll<HTMLElement>('.opt')].filter(b => b.offsetParent !== null)
   all.forEach(b => b.classList.remove('focus'))
   if (!all.length || (!force && !menuSearch.value.trim())) return
   const b = all[(i + all.length) % all.length]
@@ -347,7 +354,7 @@ function openMenu() {
   menuSearch.addEventListener('input', onSearch)
   menuSearch.addEventListener('keydown', (e) => {
     if (e.isComposing) return
-    const all = [...menu.querySelectorAll('.opt')].filter(b => b.offsetParent !== null)
+    const all = [...menu.querySelectorAll<HTMLElement>('.opt')].filter(b => b.offsetParent !== null)
     const at = all.findIndex(b => b.classList.contains('focus'))
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
@@ -367,17 +374,17 @@ function openMenu() {
     ws.className = 'ws'
     ws.title = '换新任务放进的工作区'
     ws.innerHTML = '<span></span><svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5"/></svg>'
-    ws.firstChild.textContent = `在 ${trunc(workspaceTitle(), 14)}`
-    newRow.querySelector('.meta').replaceWith(ws)
+    ws.firstChild!.textContent = `在 ${trunc(workspaceTitle(), 14)}`
+    newRow.querySelector('.meta')!.replaceWith(ws)
     const wsList = Object.assign(document.createElement('div'), { className: 'ws-list', hidden: true })
     for (const w of workspaces) {
       const b = document.createElement('button')
       b.type = 'button'
       b.className = 'opt'
       b.innerHTML = '<span class="tick"></span><span class="name"></span>'
-      b.querySelector('.tick').textContent = w.id === workspaceId ? '✓' : ''
-      b.querySelector('.name').textContent = w.title
-      b.addEventListener('click', () => { setWorkspace(w.id); setTarget('new', true); closeMenu(); input.focus() })
+      b.querySelector('.tick')!.textContent = w.id === workspaceId ? '✓' : ''
+      b.querySelector('.name')!.textContent = w.title
+      b.addEventListener('click', () => { setWorkspace(w.id); setTarget('new'); closeMenu(); input.focus() })
       wsList.append(b)
     }
     ws.addEventListener('click', (e) => { e.stopPropagation(); wsList.hidden = !wsList.hidden; fitMenu() })
@@ -419,16 +426,16 @@ function closeMenu() {
   fitHeight()
 }
 $('target').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden ? openMenu() : closeMenu() })
-document.addEventListener('click', (e) => { if (!menu.contains(e.target)) closeMenu() })
+document.addEventListener('click', (e) => { if (!menu.contains(e.target as Node)) closeMenu() })
 
-function setWorkspace(id) {
+function setWorkspace(id: string) {
   workspaceId = id
   try { localStorage.setItem(WORKSPACE_KEY, id) } catch {}
 }
 
-function requestSessions(msg) {
+function requestSessions(msg: { type: 'sessions-request' } | { type: 'sessions-search'; query: string }) {
   const reqId = newId()
-  return new Promise((resolve) => {
+  return new Promise<SessionsReply>((resolve) => {
     const off = setTimeout(() => { pendingSessions.delete(reqId); resolve({ items: [], timeout: true }) }, 5000)
     pendingSessions.set(reqId, (res) => { clearTimeout(off); pendingSessions.delete(reqId); resolve(res) })
     window.card.send({ ...msg, reqId }).then((ok) => { if (!ok) { clearTimeout(off); resolve({ items: [], offline: true }) } })
@@ -450,7 +457,7 @@ async function loadSessions() {
   sessions = [...items.filter(s => s.sessionId === currentId), ...items.filter(s => s.sessionId !== currentId)].slice(0, 5)
   workspaces = res.workspaces ?? []
   defaultWorkspaceId = res.defaultWorkspaceId
-  let saved
+  let saved: string | null | undefined
   try { saved = localStorage.getItem(WORKSPACE_KEY) } catch {}
   workspaceId = workspaces.some(w => w.id === saved) ? saved : defaultWorkspaceId
   models = res.models ?? []
@@ -462,26 +469,26 @@ async function loadSessions() {
 // ---------- 模型 ----------
 // 默认显示目标会话正在用的模型（新任务是 agent 的默认模型）；换了的话发出去前让 agent 给这个会话切过去
 const modelMenu = $('model-menu')
-let models = [] // { provider, providerName, model, name, efforts?: [{ id, name }], defaultEffort? }
-let defaultModel // 新任务用的 { provider, model, reasoningEffort? }
+let models: ModelEntry[] = []
+let defaultModel: ModelChoice | undefined // 新任务用的
 let routeModel = '' // 拿不到目录时显示的模型 id
-let modelBase // 目标会话平时用的模型（含思考强度）
-let modelPick // 用户在卡片里手动选的模型（含思考强度）
-let sessionModel // 目标会话此刻用的模型：快答临时调低过的话和 modelBase 不一样
+let modelBase: ModelChoice | undefined // 目标会话平时用的模型（含思考强度）
+let modelPick: ModelChoice | undefined // 用户在卡片里手动选的模型（含思考强度）
+let sessionModel: ModelChoice | undefined // 目标会话此刻用的模型：快答临时调低过的话和 modelBase 不一样
 
-const sameModel = (a, b) => !!a && !!b && a.provider === b.provider && a.model === b.model
-const entryOf = (m) => models.find(x => sameModel(x, m))
+const sameModel = (a: ModelChoice | undefined, b: ModelChoice | undefined) => !!a && !!b && a.provider === b.provider && a.model === b.model
+const entryOf = (m: ModelChoice | undefined) => models.find(x => sameModel(x, m))
 // 没选过思考强度就是这个模型的默认档
-const effortOf = (m) => m?.reasoningEffort ?? entryOf(m)?.defaultEffort
-const sameChoice = (a, b) => sameModel(a, b) && effortOf(a) === effortOf(b)
+const effortOf = (m: ModelChoice | undefined) => m?.reasoningEffort ?? entryOf(m)?.defaultEffort
+const sameChoice = (a: ModelChoice | undefined, b: ModelChoice | undefined) => sameModel(a, b) && effortOf(a) === effortOf(b)
 // deepseek-flash → DeepSeek Flash
-const prettyId = (id) => id.split(/[-_]/).map(w => w.toLowerCase() === 'deepseek' ? 'DeepSeek' : w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-const modelName = (m) => m ? (entryOf(m)?.name ?? prettyId(m.model)) : (routeModel ? prettyId(routeModel) : 'DeepSeek')
-const effortName = (m) => entryOf(m)?.efforts?.find(e => e.id === effortOf(m))?.name ?? ''
+const prettyId = (id: string) => id.split(/[-_]/).map(w => w.toLowerCase() === 'deepseek' ? 'DeepSeek' : w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+const modelName = (m: ModelChoice | undefined) => m ? (entryOf(m)?.name ?? prettyId(m.model)) : (routeModel ? prettyId(routeModel) : 'DeepSeek')
+const effortName = (m: ModelChoice | undefined) => entryOf(m)?.efforts?.find(e => e.id === effortOf(m))?.name ?? ''
 
 // 快答默认用低思考强度（模型有 low 这一档才换），完整用会话平时的档；手动选过就按手动选的。
 // 自动调的只改这个会话，不动 agent 的默认模型（发出去时带 sessionOnly）
-function lowOf(m) {
+function lowOf(m: ModelChoice | undefined) {
   if (!m || !entryOf(m)?.efforts?.some(e => e.id === 'low')) return m
   return { provider: m.provider, model: m.model, reasoningEffort: 'low' }
 }
@@ -496,7 +503,7 @@ function renderModel() {
 }
 
 /** 选了模型或思考强度：和这一档默认会用的一样就不算手动选 */
-function pickModel(choice) {
+function pickModel(choice: ModelChoice) {
   modelPick = sameChoice(choice, autoChoice()) ? undefined : choice
   renderModel()
 }
@@ -511,13 +518,13 @@ function syncModelBase() {
 
 // 快答把哪些会话临时调低过、原来是哪一档：接着这个会话用完整问时要换回原来的档
 const LOWERED_KEY = 'pointy.loweredSessions'
-const loweredMap = () => { try { return JSON.parse(localStorage.getItem(LOWERED_KEY) ?? '{}') } catch { return {} } }
-function loweredFrom(s) {
+const loweredMap = (): Record<string, ModelChoice> => { try { return JSON.parse(localStorage.getItem(LOWERED_KEY) ?? '{}') } catch { return {} } }
+function loweredFrom(s: SessionInfo) {
   const was = loweredMap()[s.sessionId]
   // 会话现在还是我们调低的那一档才算数；用户在 agent 里自己换过就以那边为准
   return was && s.model && sameChoice(s.model, lowOf(was)) ? was : undefined
 }
-function rememberLowered(id, was) {
+function rememberLowered(id: string, was: ModelChoice | null | undefined) {
   const all = loweredMap()
   if (was) all[id] = was
   else delete all[id]
@@ -525,15 +532,15 @@ function rememberLowered(id, was) {
   for (const k of keys.slice(0, Math.max(0, keys.length - 50))) delete all[k]
   try { localStorage.setItem(LOWERED_KEY, JSON.stringify(all)) } catch {}
 }
-let loweredPending // 这一问发出前会话原来的档（快答自动调低时），会话 id 回来再记
+let loweredPending: ModelChoice | null | undefined // 这一问发出前会话原来的档（快答自动调低时），会话 id 回来再记
 
 function openModelMenu() {
   if ($('model').disabled) return
   closeMenu()
   const current = wantedModel()
   const multi = new Set(models.map(m => m.provider)).size > 1
-  const items = []
-  let group
+  const items: HTMLElement[] = []
+  let group: string | undefined
   for (const m of models) {
     if (multi && m.provider !== group) {
       group = m.provider
@@ -543,8 +550,8 @@ function openModelMenu() {
     b.type = 'button'
     b.className = 'opt'
     b.innerHTML = '<span class="tick"></span><span class="name"></span>'
-    b.querySelector('.tick').textContent = sameModel(m, current) ? '✓' : ''
-    b.querySelector('.name').textContent = m.name
+    b.querySelector('.tick')!.textContent = sameModel(m, current) ? '✓' : ''
+    b.querySelector('.name')!.textContent = m.name
     b.title = `${m.providerName || m.provider} · ${m.model}`
     // 换模型时菜单不关，下面的思考强度跟着换成这个模型的档位
     b.addEventListener('click', (e) => {
@@ -567,7 +574,7 @@ function openModelMenu() {
       b.textContent = ef.name
       b.classList.toggle('on', ef.id === effortOf(current))
       b.addEventListener('click', () => {
-        pickModel({ provider: current.provider, model: current.model, reasoningEffort: ef.id })
+        pickModel({ provider: current!.provider, model: current!.model, reasoningEffort: ef.id })
         closeModelMenu()
         input.focus()
       })
@@ -583,7 +590,7 @@ function openModelMenu() {
 }
 function closeModelMenu() { modelMenu.hidden = true }
 $('model').addEventListener('click', (e) => { e.stopPropagation(); modelMenu.hidden ? openModelMenu() : closeModelMenu() })
-document.addEventListener('click', (e) => { if (!modelMenu.contains(e.target)) closeModelMenu() })
+document.addEventListener('click', (e) => { if (!modelMenu.contains(e.target as Node)) closeModelMenu() })
 
 // ---------- 右下角拖拽调大小 ----------
 const grip = $('grip')
@@ -600,12 +607,12 @@ grip.addEventListener('pointermove', (e) => {
   $('card').classList.add('manual')
   gripFrame = requestAnimationFrame(() => { gripFrame = 0; window.card.gripMove() })
 })
-const gripEnd = (e) => { if (grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId); window.card.gripEnd() }
+const gripEnd = (e: PointerEvent) => { if (grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId); window.card.gripEnd() }
 grip.addEventListener('pointerup', gripEnd)
 grip.addEventListener('pointercancel', gripEnd)
 
 // ---------- 发问 ----------
-function addTurn(youText) {
+function addTurn(youText: string) {
   thread.hidden = false
   thread.append(Object.assign(document.createElement('div'), { className: 'you', textContent: youText }))
   const el = Object.assign(document.createElement('div'), { className: 'reply' })
@@ -617,16 +624,16 @@ function addTurn(youText) {
   thread.scrollTop = thread.scrollHeight
 }
 
-async function send(instruction, label) {
+async function send(instruction: string, label?: string) {
   const extra = input.value.trim()
   const followUp = sessionId !== undefined
   const question = [instruction, extra].filter(Boolean).join('\n\n')
   const first = followUp ? undefined : material()
   // 第一问：有问题或有材料才发；追问：得打了字
-  if (!question && (followUp || (!first.selection && !first.ctx.length && !image && !wideImage))) return input.focus()
+  if (!question && (followUp || (!first!.selection && !first!.ctx.length && !image && !wideImage))) return input.focus()
   if (!followUp && $('target').disabled) return // agent 没连上
   lastAsked = (label || extra || instruction).replace(/\s+/g, ' ').trim()
-  const to = followUp ? sessionId : targetValue
+  const to = followUp ? sessionId! : targetValue
   if (!followUp) insertedInto = to !== 'new'
   if (!followUp) {
     const s = known.get(to)
@@ -652,7 +659,7 @@ async function send(instruction, label) {
   closeModelMenu()
   // 截图只跟第一问走
   const ws = to === 'new' && workspaceId ? { workspaceId } : {}
-  const shots = followUp ? [] : [image, wideImage].filter(Boolean)
+  const shots = followUp ? [] : [image, wideImage].filter((s): s is string => Boolean(s))
   const ok = await window.card.send({
     type: 'ask', askId, target: to, question, mode: sendMode, followUp,
     // 追问时档位和上一条不一样，agent 那边会补一句对应的要求
@@ -663,7 +670,7 @@ async function send(instruction, label) {
   if (ok) sentMode = sendMode
   // 发出去之后引用和截图就定了，× 收起来
   if (ok && !followUp) {
-    for (const b of document.querySelectorAll('.drop')) b.hidden = true
+    for (const b of document.querySelectorAll<HTMLElement>('.drop')) b.hidden = true
     // 问出去以后引用只用来提醒问的是哪段，收成一行，点一下再展开
     quote.classList.add('compact')
     // 问出去了，指认的高亮框就没用了，让Pointy撤掉
@@ -702,11 +709,11 @@ async function send(instruction, label) {
 // 当前这一步一行；完整档在上面列最近 3 步，后面带已用时间
 let progressFull = false
 let progressStart = 0
-let progressTimer
-let progressSteps = [] // 完整档做过的步骤（人话），最新的在最后
+let progressTimer: number | undefined
+let progressSteps: string[] = [] // 完整档做过的步骤（人话），最新的在最后
 let progressNow = ''
 
-function startProgress(full) {
+function startProgress(full: boolean) {
   progressFull = full
   progressStart = Date.now()
   progressSteps = []
@@ -722,7 +729,7 @@ const elapsed = () => {
   const sec = Math.floor((Date.now() - progressStart) / 1000)
   return sec < 60 ? `${sec} 秒` : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 }
-function showActivity(text) {
+function showActivity(text: string) {
   // 完整档：换到新的一步时，上一步记进列表
   if (progressFull && progressNow && text !== progressNow && !/^(在想|正在写|发给)/.test(progressNow)) {
     progressSteps = [...progressSteps.filter(s => s !== progressNow), progressNow].slice(-3)
@@ -739,12 +746,14 @@ function renderProgress() {
   activity.innerHTML = `${steps}<div class="now"><span class="dots"></span>${escapeText(progressNow.replace(/…$/, ''))}${time}</div>`
   fitHeight()
 }
-const escapeText = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const escapeText = (t: string) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[c])
+
+interface KeyLink { href: string; label: string }
 
 // 完整档做完：从回答里挑出关键链接（PR、issue、网页、本机文件），放在回答下面
-function keyLinks(text) {
-  const out = []
-  const seen = new Set()
+function keyLinks(text: string) {
+  const out: KeyLink[] = []
+  const seen = new Set<string>()
   for (const m of text.matchAll(/https?:\/\/[^\s)>\]"'`，。]+/g)) {
     const href = m[0].replace(/[.,;:]+$/, '')
     if (seen.has(href)) continue
@@ -760,12 +769,12 @@ function keyLinks(text) {
     out.push({ href, label: label.length > 28 ? `${label.slice(0, 27)}…` : label })
   }
   // PR、issue 排前面
-  out.sort((a, b) => /^(PR|issue) #/.test(b.label) - /^(PR|issue) #/.test(a.label))
+  out.sort((a, b) => Number(/^(PR|issue) #/.test(b.label)) - Number(/^(PR|issue) #/.test(a.label)))
   for (const m of text.matchAll(/\b[a-zA-Z]:\\[^\s`"'<>|*?，。)]+/g)) {
     const href = m[0].replace(/[.,;:]+$/, '')
     if (seen.has(href)) continue
     seen.add(href)
-    out.push({ href, label: href.split(/[\\/]/).filter(Boolean).pop() })
+    out.push({ href, label: href.split(/[\\/]/).filter(Boolean).pop()! })
   }
   return out.slice(0, 3)
 }
@@ -773,14 +782,14 @@ function keyLinks(text) {
 // 只有停在底部时才跟着新字往下滚；用户往上翻了就不拽回来，翻回底部再继续跟
 function renderReply() {
   const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 32
-  reply.el.innerHTML = renderMarkdown(reply.text)
+  reply!.el.innerHTML = renderMarkdown(reply!.text)
   if (atBottom) thread.scrollTop = thread.scrollHeight
 }
 
 // 问过就开那个会话；没问过就开选中的目标会话；目标是"新任务"时只把 agent 提到前台
 const openInAgent = () => window.card.openAgent(sessionId ?? (targetValue !== 'new' ? targetValue : undefined))
 
-function addAfterLinks(links = []) {
+function addAfterLinks(links: KeyLink[] = []) {
   const after = document.createElement('div')
   after.className = 'after'
   for (const l of links) {
@@ -809,7 +818,7 @@ function addAfterLinks(links = []) {
 }
 
 /** 卡片顶上那一行：从哪指过来的。网页写域名，普通程序写窗口标题或程序名 */
-function describeSource(g) {
+function describeSource(g: Grab) {
   let host = ''
   try { host = g.url ? new URL(g.url).hostname.replace(/^www\./, '') : '' } catch {}
   const app = String(g.source?.app ?? '').replace(/\.exe$/i, '')
@@ -835,8 +844,8 @@ window.card.onInit((data) => {
   pageKey = g.url ? String(g.url).split('#')[0] : (g.source?.app ? `${g.source.app}|${g.source.title ?? ''}` : '')
   $('source').textContent = describeSource(g)
   if (g.note?.text) {
-    $('note').querySelector('span').textContent = g.note.text
-    $('note').querySelector('button').hidden = !g.note.install
+    $('note').querySelector('span')!.textContent = g.note.text
+    $('note').querySelector('button')!.hidden = !g.note.install
     $('note').hidden = false
   }
   element = g.element
@@ -847,10 +856,10 @@ window.card.onInit((data) => {
   image =typeof g.image === 'string' && g.image.startsWith('data:image/') ? g.image : undefined
   wideImage = typeof g.wideImage === 'string' && g.wideImage.startsWith('data:image/') ? g.wideImage : undefined
   shotKind = g.shotKind === 'focus' ? 'focus' : 'element'
-  const firstEl = $('shot').querySelector('img:not(.wide)')
+  const firstEl = $('shot').querySelector<HTMLImageElement>('img:not(.wide)')!
   firstEl.hidden = !image
   if (image) firstEl.src = image
-  const wideEl = $('shot').querySelector('img.wide')
+  const wideEl = $('shot').querySelector<HTMLImageElement>('img.wide')
   if (wideEl) { wideEl.hidden = !wideImage; if (wideImage) wideEl.src = wideImage }
   $('shot').hidden = !image && !wideImage
   ctxItems = []
@@ -914,7 +923,7 @@ window.card.onAgent((msg) => {
       if (!finished) showActivity('在想…')
       break
     case 'ask-delta':
-      reply.text += msg.text
+      reply!.text += msg.text
       allText += msg.text
       renderReply()
       if (!finished && progressNow !== '正在写…') showActivity('正在写…')
@@ -968,7 +977,7 @@ document.addEventListener('keydown', (e) => {
     // Tab：当前会话 ↔ 新任务
     e.preventDefault()
     closeMenu()
-    setTarget(targetValue === 'new' && currentId ? currentId : 'new', true)
+    setTarget(targetValue === 'new' && currentId ? currentId : 'new')
   }
 })
 // 卡片什么时候消失：问过问题的卡片不会悄悄没了，被挤走就缩成右下角的胶囊，点胶囊放回来
@@ -1000,20 +1009,21 @@ window.card.onRestore(() => {
   void el.offsetWidth
   el.style.animation = 'restore 240ms cubic-bezier(.2,.8,.3,1)'
 })
-$('shot').querySelector('.drop').addEventListener('click', () => { image = undefined; wideImage = undefined; $('shot').hidden = true; fitHeight() })
+$('shot').querySelector('.drop')!.addEventListener('click', () => { image = undefined; wideImage = undefined; $('shot').hidden = true; fitHeight() })
 // 截图是异步解码的，加载完卡片才知道真高度，再量一次
 for (const img of $('shot').querySelectorAll('img')) img.addEventListener('load', () => fitHeight())
-$('quote-wrap').querySelector('.drop').addEventListener('click', () => { selection = ''; $('quote-wrap').hidden = true; fitHeight() })
+$('quote-wrap').querySelector('.drop')!.addEventListener('click', () => { selection = ''; $('quote-wrap').hidden = true; fitHeight() })
 $('open-agent').addEventListener('click', openInAgent)
-$('note').querySelector('button').addEventListener('click', () => window.card.extensionGuide())
+$('note').querySelector('button')!.addEventListener('click', () => window.card.extensionGuide())
 // 回复里的链接不在卡片里跳转，交给主进程：网址用浏览器打开，本机文件在资源管理器里定位
 // 图片加载完才知道高度，再量一次；点图片用系统看图打开
-thread.addEventListener('load', (e) => { if (e.target.tagName === 'IMG') fitHeight() }, true)
+thread.addEventListener('load', (e) => { if ((e.target as Element).tagName === 'IMG') fitHeight() }, true)
 thread.addEventListener('click', (e) => {
-  const img = e.target.closest('img[data-path]')
-  if (img) { e.preventDefault(); window.card.openImage(img.dataset.path); return }
-  const a = e.target.closest('a[data-href]')
+  const target = e.target as Element
+  const img = target.closest<HTMLElement>('img[data-path]')
+  if (img) { e.preventDefault(); window.card.openImage(img.dataset.path!); return }
+  const a = target.closest<HTMLElement>('a[data-href]')
   if (!a) return
   e.preventDefault()
-  window.card.openLink(a.dataset.href)
+  window.card.openLink(a.dataset.href!)
 })

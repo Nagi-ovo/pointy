@@ -1,9 +1,9 @@
 // 小提示窗：一个标题、几段话、几个按钮。点了哪个按钮（或关掉）告诉主进程。
 // 段落里只认 **粗体**，其余按纯文本放进去。
 // 段落也可以是 { text, copy: [值, …] }：段落下面一行可复制的值，点了只复制、窗口不关
-const $ = (id) => document.getElementById(id)
+const $ = (id: string) => document.getElementById(id)!
 
-function paragraph(text) {
+function paragraph(text: string) {
   const p = document.createElement('p')
   String(text).split(/(\*\*[^*]+\*\*)/).forEach((part) => {
     if (/^\*\*[^*]+\*\*$/.test(part)) {
@@ -15,11 +15,11 @@ function paragraph(text) {
   return p
 }
 
-function copyRow(values) {
+function copyRow(values: string[]) {
   const row = document.createElement('div')
   row.className = 'copies'
   for (const value of values) {
-    const chip = document.createElement('button')
+    const chip: HTMLButtonElement & { timer?: number } = document.createElement('button')
     chip.type = 'button'
     chip.className = 'copy'
     chip.title = '复制'
@@ -38,7 +38,7 @@ function copyRow(values) {
   return row
 }
 
-const item = (it) => (typeof it === 'object' && it ? [paragraph(it.text ?? ''), copyRow(it.copy ?? [])] : [paragraph(it)])
+const item = (it: NoticeParagraph) => (typeof it === 'object' && it ? [paragraph(it.text ?? ''), copyRow(it.copy ?? [])] : [paragraph(it)])
 
 window.notice.onInit((data) => {
   $('buttons').hidden = !data.buttons?.length
@@ -57,3 +57,5 @@ window.notice.onInit((data) => {
 
 $('x').addEventListener('click', () => window.notice.choose(null))
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.notice.choose(null) })
+
+export {}

@@ -1,26 +1,32 @@
 // macOS：全屏检测、前台程序、模拟复制、指认期间拦截点击、读控件的小进程、卸载后清理。
 // 屏幕坐标一律是点（左上角是主显示器左上角），和 Electron 的 DIP 相同，所以坐标换算都是原样
-const { screen, systemPreferences } = require('electron')
-const { spawn } = require('node:child_process')
-const path = require('node:path')
-const fs = require('node:fs')
-const { koffi, CF, CG, libSystem, CGRect, constant, cfstr, toString, toNumber, toArray, dictGet, CFRelease, send, sendInt, orderAbove, objc, objc_getClass, sel_registerName, msgPtr } = require('./mac/cf')
+import { screen, systemPreferences } from 'electron'
+import type { BrowserWindow, Point, Rectangle } from 'electron'
+import { spawn } from 'node:child_process'
+import path from 'node:path'
+import fs from 'node:fs'
+import { koffi, CF, CG, libSystem, CGRect, constant, cfstr, toString, toNumber, toArray, dictGet, CFRelease, send, sendInt, orderAbove, objc, objc_getClass, sel_registerName, msgPtr } from './mac/cf.ts'
+import type { CGPointValue, CGRectValue, CGSizeValue } from './mac/cf.ts'
+import type { A11yHelperProcess, ButtonHooks, Foreground, Pointer } from './types.ts'
 
 // ---------- 窗口列表 ----------
-const CGWindowListCopyWindowInfo = CG.func('void *CGWindowListCopyWindowInfo(uint32 option, uint32 relativeTo)')
-const CGRectMakeWithDictionaryRepresentation = CG.func('bool CGRectMakeWithDictionaryRepresentation(void *dict, _Out_ CGRect *rect)')
+const CGWindowListCopyWindowInfo: (option: number, relativeTo: number) => Pointer | null = CG.func('void *CGWindowListCopyWindowInfo(uint32 option, uint32 relativeTo)')
+const CGRectMakeWithDictionaryRepresentation: (dict: Pointer | null, rect: CGRectValue) => boolean = CG.func('bool CGRectMakeWithDictionaryRepresentation(void *dict, _Out_ CGRect *rect)')
 const kCGWindowListOptionAll = 0
 const kCGWindowListOptionOnScreenOnly = 1
 const kCGWindowListOptionIncludingWindow = 8
 const kCGWindowListExcludeDesktopElements = 16
 
-/** 屏幕上的窗口，从前往后：{ id, pid, layer, title, bounds: { x, y, width, height } } */
-function windows(option = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, relativeTo = 0) {
+interface WindowInfo { id: bigint; pid: number; layer: number; title: string; bounds: Rectangle | undefined }
+
+/** 屏幕上的窗口，从前往后 */
+function windows(option = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, relativeTo = 0): WindowInfo[] {
   const list = CGWindowListCopyWindowInfo(option, relativeTo)
   if (!list) return []
   try {
     return toArray(list).map((info) => {
-      const r = {}
+      // koffi 把 _Out_ 结构体写进这个对象
+      const r = {} as CGRectValue
       const bounds = CGRectMakeWithDictionaryRepresentation(dictGet(info, 'kCGWindowBounds'), r)
         ? { x: r.origin.x, y: r.origin.y, width: r.size.width, height: r.size.height }
         : undefined
@@ -47,7 +53,7 @@ function frontWindow() {
 }
 
 /** @param ownIds 本程序自己的窗口（windowId 的结果），自己不算 */
-function isFullscreenActive(ownIds = []) {
+export function isFullscreenActive(ownIds: bigint[] = []) {
   const w = frontWindow()
   if (!w?.bounds || w.pid === process.pid || ownIds.includes(w.id)) return false
   const b = w.bounds
@@ -56,62 +62,63 @@ function isFullscreenActive(ownIds = []) {
 
 // ---------- 窗口 ----------
 /** 自己的窗口在系统里的编号（和 foregroundId 可比）：getMediaSourceId 是 "window:<编号>:0" */
-const windowId = (win) => BigInt(win.getMediaSourceId().split(':')[1] ?? 0)
-const foregroundId = () => frontWindow()?.id ?? 0n
+export const windowId = (win: BrowserWindow) => BigInt(win.getMediaSourceId().split(':')[1] ?? 0)
+export const foregroundId = () => frontWindow()?.id ?? 0n
 // Mac 上被唤起的程序自己能到前台，不用放行
-const allowAnyForeground = () => {}
+export const allowAnyForeground = () => {}
 // 别的程序的窗口当不了 Pointy 窗口的父窗口，改成模仿 Windows 的效果：窗口留在普通层，
 // 来源程序在前台时把挂在它上面的窗口按出现顺序排到它正上方；切到别的程序，那个程序的窗口自然盖住它们
 const STACK_POLL_MS = 100
 /** 来源窗口编号 → 挂在它上面的 Pointy 窗口，先挂的在下面 */
-const attached = new Map()
-let stackTimer
+const attached = new Map<bigint, BrowserWindow[]>()
+let stackTimer: NodeJS.Timeout | undefined
 
 function restack() {
   const pid = frontmostPid()
   const onScreen = windows()
   const index = new Map(onScreen.map((w, i) => [w.id, i]))
   // 最小化了、在别的桌面上的窗口不在屏幕列表里，要查全部窗口才知道还在不在；只在有来源窗口不在屏幕上时查
-  let all
-  const exists = (id) => (all ??= new Set(windows(kCGWindowListOptionAll).map((w) => w.id))).has(id)
+  let all: Set<bigint> | undefined
+  const exists = (id: bigint) => (all ??= new Set(windows(kCGWindowListOptionAll).map((w) => w.id))).has(id)
   for (const [owner, list] of attached) {
     const live = list.filter((w) => !w.isDestroyed())
-    if (!live.length || (!index.has(owner) && !exists(owner))) { attached.delete(owner); continue }
+    const ownerIndex = index.get(owner)
+    if (!live.length || (ownerIndex === undefined && !exists(owner))) { attached.delete(owner); continue }
     attached.set(owner, live)
     // 来源窗口暂时不在屏幕上：留着，回来时接着排在它上面
-    if (!index.has(owner) || onScreen[index.get(owner)].pid !== pid) continue
+    if (ownerIndex === undefined || onScreen[ownerIndex].pid !== pid) continue
     const shown = live.filter((w) => w.isVisible())
     // 越靠前编号越小；有一个落到来源窗口后面了才重排，平时不动
-    if (!shown.some((w) => (index.get(windowId(w)) ?? Infinity) > index.get(owner))) continue
+    if (!shown.some((w) => (index.get(windowId(w)) ?? Infinity) > ownerIndex)) continue
     let below = owner
     for (const w of shown) { orderAbove(w, below); below = windowId(w) }
   }
   if (!attached.size) { clearInterval(stackTimer); stackTimer = undefined }
 }
 
-function attachToOwner(win, owner) {
+export function attachToOwner(win: BrowserWindow, owner: bigint) {
   win.setAlwaysOnTop(false)
   attached.set(owner, [...(attached.get(owner) ?? []), win])
   stackTimer ??= setInterval(restack, STACK_POLL_MS)
   return true
 }
 
-function windowOrigin(id) {
+export function windowOrigin(id: bigint) {
   const b = windows(kCGWindowListOptionIncludingWindow, Number(id))[0]?.bounds
   return b ? { x: b.x, y: b.y } : undefined
 }
 
 // ---------- 坐标：点就是 DIP ----------
-const cursor = () => screen.getCursorScreenPoint()
-const toScreenPoint = (dip) => ({ x: Math.round(dip.x), y: Math.round(dip.y) })
-const toDipPoint = (p) => p
-const toDipRect = (r) => r
-const unitsPerDip = () => 1
+export const cursor = () => screen.getCursorScreenPoint()
+export const toScreenPoint = (dip: Point) => ({ x: Math.round(dip.x), y: Math.round(dip.y) })
+export const toDipPoint = (p: Point) => p
+export const toDipRect = (r: Rectangle) => r
+export const unitsPerDip = () => 1
 
 // ---------- 鼠标、按键 ----------
-const CGEventSourceButtonState = CG.func('bool CGEventSourceButtonState(int32 state, uint32 button)')
-const CGEventSourceFlagsState = CG.func('uint64 CGEventSourceFlagsState(int32 state)')
-const CGEventSourceKeyState = CG.func('bool CGEventSourceKeyState(int32 state, uint16 key)')
+const CGEventSourceButtonState: (state: number, button: number) => boolean = CG.func('bool CGEventSourceButtonState(int32 state, uint32 button)')
+const CGEventSourceFlagsState: (state: number) => number | bigint = CG.func('uint64 CGEventSourceFlagsState(int32 state)')
+const CGEventSourceKeyState: (state: number, key: number) => boolean = CG.func('bool CGEventSourceKeyState(int32 state, uint16 key)')
 const kCGEventSourceStateCombinedSessionState = 0
 const MOUSE_LEFT = 0
 const MOUSE_RIGHT = 1
@@ -119,24 +126,24 @@ const MOUSE_CENTER = 2
 const MODIFIER_MASK = 0x20000n | 0x40000n | 0x80000n | 0x100000n // Shift、Control、Option、Command
 const KEY_SPACE = 49
 
-const button = (b) => CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, b)
-const buttonDown = () => [MOUSE_LEFT, MOUSE_RIGHT, MOUSE_CENTER].some(button)
-const rightButtonDown = () => button(MOUSE_RIGHT)
+const button = (b: number) => CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, b)
+export const buttonDown = () => [MOUSE_LEFT, MOUSE_RIGHT, MOUSE_CENTER].some(button)
+export const rightButtonDown = () => button(MOUSE_RIGHT)
 // 光标藏起来（打字时、看视频时）系统不给普通程序查，按看得见算
-const cursorVisible = () => true
-const modifiersDown = () => (BigInt(CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState)) & MODIFIER_MASK) !== 0n ||
+export const cursorVisible = () => true
+export const modifiersDown = () => (BigInt(CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState)) & MODIFIER_MASK) !== 0n ||
   CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, KEY_SPACE)
 
 // ---------- 前台程序 ----------
-const proc_pidpath = libSystem.func('int proc_pidpath(int pid, _Out_ uint8 *buf, uint32 size)')
-function processPath(pid) {
+const proc_pidpath: (pid: number, buf: Buffer, size: number) => number = libSystem.func('int proc_pidpath(int pid, _Out_ uint8 *buf, uint32 size)')
+function processPath(pid: number) {
   const buf = Buffer.alloc(4096)
   const n = proc_pidpath(pid, buf, buf.length)
   return n > 0 ? buf.toString('utf8', 0, n) : ''
 }
 
 /** 前台程序：窗口标题、可执行文件名（小写，例如 google chrome） */
-function foreground() {
+export function foreground(): Foreground {
   const pid = frontmostPid()
   if (!pid) return { title: '', exe: '', exePath: '' }
   const w = windows().find((x) => x.pid === pid && x.layer === 0)
@@ -145,27 +152,27 @@ function foreground() {
 }
 
 // Mac 上没有"以管理员身份运行"的窗口程序
-const elevatedUnderCursor = () => false
+export const elevatedUnderCursor = () => false
 
-const BROWSERS = new Set(['google chrome', 'google chrome beta', 'google chrome canary', 'microsoft edge', 'brave browser', 'vivaldi', 'chromium', 'arc'])
-const browserKind = (exe) => (exe.startsWith('microsoft edge') ? 'edge' : 'chrome')
-const BLOCKED_APPS = new Set([
+export const BROWSERS = new Set(['google chrome', 'google chrome beta', 'google chrome canary', 'microsoft edge', 'brave browser', 'vivaldi', 'chromium', 'arc'])
+export const browserKind = (exe: string) => (exe.startsWith('microsoft edge') ? 'edge' : 'chrome')
+export const BLOCKED_APPS = new Set([
   '1password', '1password 7', 'bitwarden', 'keepassxc', 'enpass', 'dashlane', 'lastpass', 'keychain access', 'passwords',
   'securityagent', 'loginwindow', 'coreautha', 'screensaverengine',
 ])
 // Mac 的终端里 ⌘C 只是复制，这里只防着 ⌘C 有别的意思的程序
-const NO_COPY_APPS = new Set(['vim', 'emacs'])
+export const NO_COPY_APPS = new Set(['vim', 'emacs'])
 
 // ---------- 模拟复制 ----------
-const CGEventCreateKeyboardEvent = CG.func('void *CGEventCreateKeyboardEvent(void *source, uint16 key, bool down)')
-const CGEventSetFlags = CG.func('void CGEventSetFlags(void *event, uint64 flags)')
-const CGEventPost = CG.func('void CGEventPost(uint32 tap, void *event)')
+const CGEventCreateKeyboardEvent: (source: null, key: number, down: boolean) => Pointer = CG.func('void *CGEventCreateKeyboardEvent(void *source, uint16 key, bool down)')
+const CGEventSetFlags: (event: Pointer, flags: number) => void = CG.func('void CGEventSetFlags(void *event, uint64 flags)')
+const CGEventPost: (tap: number, event: Pointer) => void = CG.func('void CGEventPost(uint32 tap, void *event)')
 const kCGHIDEventTap = 0
 const KEY_C = 8
 const kCGEventFlagMaskCommand = 0x100000
 
-const clipboardSeq = () => sendInt(send('NSPasteboard', 'generalPasteboard'), 'changeCount')
-function sendCopy() {
+export const clipboardSeq = () => sendInt(send('NSPasteboard', 'generalPasteboard'), 'changeCount')
+export function sendCopy() {
   for (const down of [true, false]) {
     const e = CGEventCreateKeyboardEvent(null, KEY_C, down)
     CGEventSetFlags(e, kCGEventFlagMaskCommand)
@@ -176,14 +183,14 @@ function sendCopy() {
 
 // ---------- 指认期间：拦下点击和滚轮 ----------
 const CGEventTapCallBack = koffi.proto('void *CGEventTapCallBack(void *proxy, uint32 type, void *event, void *refcon)')
-const CGEventTapCreate = CG.func('void *CGEventTapCreate(uint32 tap, uint32 place, uint32 options, uint64 mask, CGEventTapCallBack *callback, void *refcon)')
-const CGEventTapEnable = CG.func('void CGEventTapEnable(void *tap, bool enable)')
-const CGEventGetIntegerValueField = CG.func('int64 CGEventGetIntegerValueField(void *event, uint32 field)')
-const CFMachPortCreateRunLoopSource = CF.func('void *CFMachPortCreateRunLoopSource(void *alloc, void *port, long order)')
-const CFMachPortInvalidate = CF.func('void CFMachPortInvalidate(void *port)')
-const CFRunLoopGetMain = CF.func('void *CFRunLoopGetMain()')
-const CFRunLoopAddSource = CF.func('void CFRunLoopAddSource(void *loop, void *source, void *mode)')
-const CFRunLoopRemoveSource = CF.func('void CFRunLoopRemoveSource(void *loop, void *source, void *mode)')
+const CGEventTapCreate: (tap: number, place: number, options: number, mask: bigint, callback: koffi.IKoffiRegisteredCallback, refcon: null) => Pointer | null = CG.func('void *CGEventTapCreate(uint32 tap, uint32 place, uint32 options, uint64 mask, CGEventTapCallBack *callback, void *refcon)')
+const CGEventTapEnable: (tap: Pointer, enable: boolean) => void = CG.func('void CGEventTapEnable(void *tap, bool enable)')
+const CGEventGetIntegerValueField: (event: Pointer, field: number) => number | bigint = CG.func('int64 CGEventGetIntegerValueField(void *event, uint32 field)')
+const CFMachPortCreateRunLoopSource: (alloc: null, port: Pointer, order: number) => Pointer = CF.func('void *CFMachPortCreateRunLoopSource(void *alloc, void *port, long order)')
+const CFMachPortInvalidate: (port: Pointer) => void = CF.func('void CFMachPortInvalidate(void *port)')
+const CFRunLoopGetMain: () => Pointer = CF.func('void *CFRunLoopGetMain()')
+const CFRunLoopAddSource: (loop: Pointer, source: Pointer, mode: Pointer) => void = CF.func('void CFRunLoopAddSource(void *loop, void *source, void *mode)')
+const CFRunLoopRemoveSource: (loop: Pointer, source: Pointer, mode: Pointer) => void = CF.func('void CFRunLoopRemoveSource(void *loop, void *source, void *mode)')
 const kCGSessionEventTap = 1
 const kCGHeadInsertEventTap = 0
 const kCGEventTapOptionDefault = 0
@@ -195,9 +202,9 @@ const TAP_MASK = [EVENT.leftDown, EVENT.leftUp, EVENT.rightDown, EVENT.rightUp, 
  * 吃掉左右键：左键抬起 = 选中，右键抬起 = 取消；下面的程序都收不到。没有辅助功能权限时装不上，返回 undefined（退回轮询 + 空格）
  * wantWheel() 为真时滚轮也吃掉，交给 onWheel（+1 往上滚 / -1 往下滚）
  */
-function hookButtons({ onLeftUp, onRightUp, onWheel, wantWheel }) {
-  let tap
-  const callback = koffi.register((_proxy, type, event) => {
+export function hookButtons({ onLeftUp, onRightUp, onWheel, wantWheel }: ButtonHooks) {
+  let tap: Pointer | null | undefined
+  const callback = koffi.register((_proxy: Pointer, type: number, event: Pointer) => {
     if (type === EVENT.tapDisabledByTimeout || type === EVENT.tapDisabledByUser) { if (tap) CGEventTapEnable(tap, true); return event }
     if (type === EVENT.scroll) {
       if (!wantWheel?.()) return event
@@ -212,17 +219,18 @@ function hookButtons({ onLeftUp, onRightUp, onWheel, wantWheel }) {
   }, koffi.pointer(CGEventTapCallBack))
   tap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault, TAP_MASK, callback, null)
   if (!tap) { koffi.unregister(callback); return undefined }
-  const source = CFMachPortCreateRunLoopSource(null, tap, 0)
+  const installed = tap
+  const source = CFMachPortCreateRunLoopSource(null, installed, 0)
   const loop = CFRunLoopGetMain()
   const mode = constant('kCFRunLoopCommonModes')
   CFRunLoopAddSource(loop, source, mode)
-  CGEventTapEnable(tap, true)
+  CGEventTapEnable(installed, true)
   return () => {
-    CGEventTapEnable(tap, false)
+    CGEventTapEnable(installed, false)
     CFRunLoopRemoveSource(loop, source, mode)
-    CFMachPortInvalidate(tap)
+    CFMachPortInvalidate(installed)
     CFRelease(source)
-    CFRelease(tap)
+    CFRelease(installed)
     tap = undefined
     koffi.unregister(callback)
   }
@@ -233,16 +241,16 @@ function hookButtons({ onLeftUp, onRightUp, onWheel, wantWheel }) {
 const CURSOR_PT = 32
 const CURSOR_DIR = path.join(__dirname, '..', '..', '..', 'assets', 'cursor')
 const CURSOR_RESET_MS = 16
-const msgCursor = objc.func('void *objc_msgSend(void *self, void *sel, void *image, CGPoint hotSpot)')
-const msgObj = objc.func('void *objc_msgSend(void *self, void *sel, void *arg)')
-const msgSize = objc.func('void objc_msgSend(void *self, void *sel, CGSize size)')
-let whale
-let cursorTimer
+const msgCursor: (self: Pointer, sel: Pointer, image: Pointer, hotSpot: CGPointValue) => Pointer = objc.func('void *objc_msgSend(void *self, void *sel, void *image, CGPoint hotSpot)')
+const msgObj: (self: Pointer, sel: Pointer, arg: Pointer) => Pointer = objc.func('void *objc_msgSend(void *self, void *sel, void *arg)')
+const msgSize: (self: Pointer, sel: Pointer, size: CGSizeValue) => void = objc.func('void objc_msgSend(void *self, void *sel, CGSize size)')
+let whale: Pointer | undefined
+let cursorTimer: NodeJS.Timeout | undefined
 
 function whaleCursor() {
-  const conn = CG.func('int32 _CGSDefaultConnection()')()
+  const conn: number = CG.func('int32 _CGSDefaultConnection()')()
   CG.func('int32 CGSSetConnectionProperty(int32 a, int32 b, void *key, void *value)')(conn, conn, cfstr('SetsCursorInBackground'), constant('kCFBooleanTrue'))
-  const alloc = (name) => msgPtr(objc_getClass(name), sel_registerName('alloc'))
+  const alloc = (name: string) => msgPtr(objc_getClass(name), sel_registerName('alloc'))
   const image = msgObj(alloc('NSImage'), sel_registerName('initWithContentsOfFile:'), cfstr(path.join(CURSOR_DIR, 'cursor-64.png')))
   msgSize(image, sel_registerName('setSize:'), { width: CURSOR_PT, height: CURSOR_PT })
   // 热点和 Windows 用的同一个：cursor-32.cur 文件头里记着
@@ -250,14 +258,15 @@ function whaleCursor() {
   return msgCursor(alloc('NSCursor'), sel_registerName('initWithImage:hotSpot:'), image, { x: cur.readUInt16LE(10), y: cur.readUInt16LE(12) })
 }
 
-function swapCursor() {
+export function swapCursor() {
   try { whale ??= whaleCursor() } catch { return }
+  const cursorRef = whale
   const set = sel_registerName('set')
   clearInterval(cursorTimer)
-  cursorTimer = setInterval(() => msgPtr(whale, set), CURSOR_RESET_MS)
+  cursorTimer = setInterval(() => msgPtr(cursorRef, set), CURSOR_RESET_MS)
 }
 
-function restoreCursor() {
+export function restoreCursor() {
   if (!cursorTimer) return
   clearInterval(cursorTimer)
   cursorTimer = undefined
@@ -265,31 +274,22 @@ function restoreCursor() {
 }
 
 // ---------- 读控件：常驻的小进程（ax-helper.js），用 Pointy 自己的 Electron 当 Node 跑 ----------
-const spawnA11yHelper = () => spawn(process.execPath, [path.join(__dirname, '..', '..', 'pick', 'native', 'ax-helper.js')], {
+export const spawnA11yHelper = (): A11yHelperProcess => spawn(process.execPath, [path.join(__dirname, '..', '..', 'pick', 'native', 'ax-helper.js')], {
   env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   stdio: ['pipe', 'pipe', 'ignore'],
 })
 
 let accessPrompted = false
 /** 读控件、拦点击、模拟复制都要辅助功能权限；没给就弹一次系统的授权框，返回给用户看的一句话 */
-function accessHint() {
+export function accessHint() {
   if (systemPreferences.isTrustedAccessibilityClient(false)) return undefined
   if (!accessPrompted) { accessPrompted = true; systemPreferences.isTrustedAccessibilityClient(true) }
   return '要先允许 Pointy 使用辅助功能：系统设置 → 隐私与安全性 → 辅助功能'
 }
 
 /** Pointy 退出后删掉 targets；最多等 30 秒 */
-function removeAfterExit(targets) {
-  const quote = (p) => `'${p.replace(/'/g, `'\\''`)}'`
+export function removeAfterExit(targets: string[]) {
+  const quote = (p: string) => `'${p.replace(/'/g, `'\\''`)}'`
   const script = `i=0; while kill -0 ${process.pid} 2>/dev/null && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done; rm -rf ${targets.map(quote).join(' ')}`
   spawn('/bin/sh', ['-c', script], { detached: true, stdio: 'ignore' }).unref()
-}
-
-module.exports = {
-  isFullscreenActive, windowId, foregroundId, allowAnyForeground, attachToOwner, windowOrigin,
-  cursor, toScreenPoint, toDipPoint, toDipRect, unitsPerDip,
-  cursorVisible, buttonDown, rightButtonDown, modifiersDown,
-  foreground, elevatedUnderCursor, BROWSERS, browserKind, BLOCKED_APPS, NO_COPY_APPS,
-  clipboardSeq, sendCopy, hookButtons, swapCursor, restoreCursor,
-  spawnA11yHelper, accessHint, removeAfterExit,
 }
