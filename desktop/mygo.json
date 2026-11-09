@@ -1,0 +1,8 @@
+{
+  "name": "Pointy",
+  "identifier": "lab.pointy.app",
+  "resources": ["../build"],
+  "macos": {
+    "infoPlist": { "LSUIElement": true }
+  }
+}
