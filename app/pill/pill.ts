@@ -26,8 +26,9 @@ window.pill.onList((items) => {
     let el = rows.get(p.id)
     if (!el) { el = row(p); rows.set(p.id, el); list.append(el) }
     el.className = `pill ${p.state}`
-    el.querySelector('.title')!.textContent = p.title
-    el.title = { run: '在后台做：', done: '做完了：', error: '出错了：' }[p.state] + p.title + '\n点一下放回卡片'
+    const title = p.title || '新任务'
+    el.querySelector('.title')!.textContent = title
+    el.title = { run: '在后台做：', done: '做完了：', error: '出错了：' }[p.state] + title + '\n点一下放回卡片'
   }
   fit()
 })

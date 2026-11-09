@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { activityText, describeUrl } from '../plugin/src/activity.ts'
+import { activityOf } from '../plugin/src/activity.ts'
+import { activityLabel, describeUrl } from '../app/card/activity.ts'
+
+const activityText = (tool: string, detail: string) => activityLabel(activityOf(tool, detail))
 
 test('GitHub URLs are named by what they point at', () => {
   assert.equal(describeUrl('https://github.com/pointylab/pointy/issues/5075'), 'issue #5075')
@@ -41,6 +44,12 @@ test('tool calls are described in plain words', () => {
   assert.equal(activityText('todo_write', ''), '正在列计划…')
   assert.equal(activityText('use_skill', ''), '正在用技能…')
   assert.equal(activityText('mystery', 'x'), '正在处理…')
+})
+
+test('the plugin sends what a tool does, not words', () => {
+  assert.deepEqual(activityOf('web_search', ' pointy '), { step: 'search', detail: 'pointy' })
+  assert.deepEqual(activityOf('WebFetch', ''), { step: 'browse' })
+  assert.deepEqual(activityOf('mystery', 'x'), { step: 'other' })
 })
 
 test('long details are cut with an ellipsis', () => {

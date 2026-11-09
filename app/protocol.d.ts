@@ -29,6 +29,11 @@ interface SessionInfo {
 interface Workspace { id: string; title: string }
 interface Suggestion { label: string; prompt: string }
 
+// What the agent is doing with a tool; detail is what the call names (a
+// query, a URL, a command, a path), raw, for the card to word.
+type ToolStep = 'search' | 'fetch' | 'browse' | 'run' | 'read' | 'find' | 'edit' | 'delegate' | 'plan' | 'skill' | 'other'
+interface ToolActivity { step: ToolStep; detail?: string }
+
 interface AskRequest {
   type: 'ask'
   askId: string
@@ -66,6 +71,6 @@ type AgentEvent =
   | { type: 'ask-accepted'; askId: string; sessionId: string; title?: string }
   | { type: 'ask-step'; askId: string }
   | { type: 'ask-delta'; askId: string; text: string }
-  | { type: 'ask-activity'; askId: string; text: string }
+  | { type: 'ask-activity'; askId: string; activity: ToolActivity }
   | { type: 'ask-done'; askId: string; sessionId?: string; reason: string; title?: string }
   | { type: 'ask-error'; askId: string; sessionId?: string; error: string }

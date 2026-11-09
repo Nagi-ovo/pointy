@@ -1,3 +1,4 @@
+import { activityLabel } from './activity.ts'
 import { renderMarkdown } from './markdown.ts'
 
 interface CardElements {
@@ -25,7 +26,10 @@ let element: GrabElement | undefined
 let askId: string | undefined
 let finished = false
 let sessionId: string | undefined
-let sessionTitle = ''
+// A new task has no name until the agent gives it one; a session picked
+// from the list may have none either.
+type SessionName = { kind: 'new' } | { kind: 'unnamed' } | { kind: 'named'; title: string }
+let sessionName: SessionName = { kind: 'new' }
 let asked = false
 let reply: { el: HTMLElement; text: string } | undefined
 let allText = ''
@@ -205,7 +209,15 @@ let currentId: string | undefined
 let targetValue = 'new'
 let pageKey = ''
 
-const titleOf = (s: SessionInfo) => s.title || '还没起标题的会话'
+const UNNAMED = '还没起标题的会话'
+const titleOf = (s: SessionInfo) => s.title || UNNAMED
+const nameOf = (s: SessionInfo | undefined): SessionName => (!s ? { kind: 'new' } : s.title ? { kind: 'named', title: s.title } : { kind: 'unnamed' })
+const nameLabel = (n: SessionName) => (n.kind === 'named' ? n.title : n.kind === 'unnamed' ? UNNAMED : undefined)
+function rename(title: string | undefined) {
+  if (!title || (sessionName.kind === 'named' && sessionName.title === title)) return false
+  sessionName = { kind: 'named', title }
+  return true
+}
 const trunc = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 function ago(ms: number | undefined) {
   const d = Date.now() - Number(ms)
@@ -596,10 +608,7 @@ async function send(instruction: string, label?: string) {
   lastAsked = (label || extra || instruction).replace(/\s+/g, ' ').trim()
   const to = followUp ? sessionId! : targetValue
   if (!followUp) insertedInto = to !== 'new'
-  if (!followUp) {
-    const s = known.get(to)
-    sessionTitle = s ? titleOf(s) : '新任务'
-  }
+  if (!followUp) sessionName = nameOf(known.get(to))
   askId = newId()
   finished = false
   asked = true
@@ -609,7 +618,7 @@ async function send(instruction: string, label?: string) {
   setStatus('running', '正在做')
   const sendMode = mode
   startProgress(sendMode === 'deep')
-  showActivity(`发给 ${agentName} 了`)
+  showActivity({ step: 'sent' })
   autoGrow()
   const wanted = wantedModel()
   const change = wanted && !sameChoice(wanted, sessionModel) ? wanted : undefined
@@ -660,14 +669,15 @@ async function send(instruction: string, label?: string) {
 let progressFull = false
 let progressStart = 0
 let progressTimer: number | undefined
-let progressSteps: string[] = []
-let progressNow = ''
+type Progress = { step: 'sent' | 'thinking' | 'writing' } | ToolActivity
+let progressSteps: ToolActivity[] = []
+let progressNow: Progress | undefined
 
 function startProgress(full: boolean) {
   progressFull = full
   progressStart = Date.now()
   progressSteps = []
-  progressNow = ''
+  progressNow = undefined
   clearInterval(progressTimer)
   if (full) progressTimer = setInterval(renderProgress, 1000)
 }
@@ -679,20 +689,31 @@ const elapsed = () => {
   const sec = Math.floor((Date.now() - progressStart) / 1000)
   return sec < 60 ? `${sec} 秒` : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 }
-function showActivity(text: string) {
-  if (progressFull && progressNow && text !== progressNow && !/^(在想|正在写|发给)/.test(progressNow)) {
-    progressSteps = [...progressSteps.filter(s => s !== progressNow), progressNow].slice(-3)
+const isTool = (p: Progress): p is ToolActivity => p.step !== 'sent' && p.step !== 'thinking' && p.step !== 'writing'
+const sameProgress = (a: Progress, b: Progress) => a.step === b.step && (isTool(a) ? a.detail : undefined) === (isTool(b) ? b.detail : undefined)
+function progressLabel(p: Progress) {
+  switch (p.step) {
+    case 'sent': return `发给 ${agentName} 了`
+    case 'thinking': return '在想…'
+    case 'writing': return '正在写…'
+    default: return activityLabel(p)
   }
-  progressNow = text
+}
+function showActivity(next: Progress) {
+  const now = progressNow
+  if (progressFull && now && isTool(now) && !sameProgress(next, now)) {
+    progressSteps = [...progressSteps.filter(s => !sameProgress(s, now)), now].slice(-3)
+  }
+  progressNow = next
   activity.hidden = false
   activity.className = 'busy'
   renderProgress()
 }
 function renderProgress() {
   if (activity.className !== 'busy') return
-  const steps = progressFull ? progressSteps.map(s => `<div class="step">${escapeText(s.replace(/…$/, ''))}</div>`).join('') : ''
+  const steps = progressFull ? progressSteps.map(s => `<div class="step">${escapeText(progressLabel(s).replace(/…$/, ''))}</div>`).join('') : ''
   const time = progressFull ? `<span class="time">${elapsed()}</span>` : ''
-  activity.innerHTML = `${steps}<div class="now"><span class="dots"></span>${escapeText(progressNow.replace(/…$/, ''))}${time}</div>`
+  activity.innerHTML = `${steps}<div class="now"><span class="dots"></span>${escapeText(progressNow ? progressLabel(progressNow).replace(/…$/, '') : '')}${time}</div>`
   fitHeight()
 }
 const escapeText = (t: string) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[c])
@@ -820,7 +841,7 @@ window.card.onInit((data) => {
 })
 
 function showTitle() {
-  const t = sessionTitle && sessionTitle !== '新任务' ? sessionTitle : lastAsked || sessionTitle
+  const t = nameLabel(sessionName) ?? (lastAsked || '新任务')
   $('title').textContent = t
   $('title').title = t
   $('title').hidden = !t
@@ -830,17 +851,14 @@ window.card.onAgent((msg) => {
   if (msg.type === 'sessions') return pendingSessions.get(msg.reqId)?.(msg)
   if (msg.type === 'suggestions') return pendingSuggest.get(msg.reqId)?.(msg)
   if (msg.type === 'title') {
-    if (msg.sessionId === sessionId && msg.title && msg.title !== sessionTitle) {
-      sessionTitle = msg.title
-      showTitle()
-    }
+    if (msg.sessionId === sessionId && rename(msg.title)) showTitle()
     return
   }
   if (msg.askId !== askId) return
   switch (msg.type) {
     case 'ask-accepted':
       sessionId = msg.sessionId
-      if (msg.title) sessionTitle = msg.title
+      rename(msg.title)
       $('target').disabled = true
       $('card').classList.add('asked')
       showTitle()
@@ -851,24 +869,21 @@ window.card.onAgent((msg) => {
       input.placeholder = '接着问…'
       break
     case 'ask-step':
-      if (!finished) showActivity('在想…')
+      if (!finished) showActivity({ step: 'thinking' })
       break
     case 'ask-delta':
       reply!.text += msg.text
       allText += msg.text
       renderReply()
-      if (!finished && progressNow !== '正在写…') showActivity('正在写…')
+      if (!finished && progressNow?.step !== 'writing') showActivity({ step: 'writing' })
       fitHeight()
       break
     case 'ask-activity':
-      if (!finished) showActivity(String(msg.text || '正在处理…'))
+      if (!finished) showActivity(msg.activity ?? { step: 'other' })
       break
     case 'ask-done':
       finished = true
-      if (msg.title && msg.title !== sessionTitle) {
-        sessionTitle = msg.title
-        showTitle()
-      }
+      if (rename(msg.title)) showTitle()
       setStatus(msg.reason === 'completed' ? 'done' : 'error', msg.reason === 'completed' ? '完成' : `结束（${msg.reason}）`)
       stopProgress()
       activity.className = ''
@@ -914,7 +929,8 @@ document.addEventListener('keydown', (e) => {
 let lastAsked = ''
 let insertedInto = false
 function keepAsPill() {
-  const title = insertedInto ? lastAsked || sessionTitle : sessionTitle && sessionTitle !== '新任务' ? sessionTitle : lastAsked || '新任务'
+  const named = nameLabel(sessionName)
+  const title = insertedInto ? lastAsked || named : named ?? (lastAsked || undefined)
   const state = !finished ? 'run' : status.className === 'error' ? 'error' : 'done'
   $('card').classList.add('shrinking')
   window.card.keep({ sessionId, title, state, fixedTitle: insertedInto })
