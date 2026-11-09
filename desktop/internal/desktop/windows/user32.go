@@ -242,9 +242,15 @@ func cloaked(h windows.HWND) bool {
 	return windows.DwmGetWindowAttribute(h, windows.DWMWA_CLOAKED, unsafe.Pointer(&c), uint32(unsafe.Sizeof(c))) == nil && c != 0
 }
 
+var selfElevated = windows.GetCurrentProcessToken().IsElevated()
+
 // ElevatedUnderCursor: Windows keeps a normal Pointy from reading an
 // administrator's window, and its mouse hook gets no clicks there.
+// An elevated Pointy reads it fine.
 func (*Desktop) ElevatedUnderCursor() bool {
+	if selfElevated {
+		return false
+	}
 	p, ok := cursorPos()
 	if !ok {
 		return false
