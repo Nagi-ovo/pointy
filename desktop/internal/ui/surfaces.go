@@ -155,6 +155,7 @@ func (u *UI) open(k kind, b mygo.Rectangle) *mygo.Window {
 	u.check("window-prepare", u.deps.Desktop.PrepareWindow(w))
 	if s.level != desktop.LevelFloating {
 		u.check("window-level", u.deps.Desktop.SetLevel(w, s.level))
+		w.SetBounds(b)
 	}
 	if s.focus == focusNever {
 		u.check("window-focus", u.deps.Desktop.SetFocusable(w, false))
