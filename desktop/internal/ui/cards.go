@@ -337,12 +337,8 @@ func (u *UI) keep(c *card, info contract.KeepInfo) {
 	if state != contract.PillDone && state != contract.PillError {
 		state = contract.PillRun
 	}
-	title := info.Title
-	if title == "" {
-		title = "新任务"
-	}
 	u.pills = slices.DeleteFunc(u.pills, func(p *pill) bool { return p.card == c })
-	u.pills = append(u.pills, &pill{PillItem: contract.PillItem{ID: pillID(c), Title: title, State: state}, sessionID: info.SessionID, card: c, fixedTitle: info.FixedTitle})
+	u.pills = append(u.pills, &pill{PillItem: contract.PillItem{ID: pillID(c), Title: info.Title, State: state}, sessionID: info.SessionID, card: c, fixedTitle: info.FixedTitle})
 	u.updatePills()
 }
 

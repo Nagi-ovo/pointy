@@ -78,10 +78,13 @@ export interface IntroInit {
   version: string;
 }
 
-/** KeepInfo is a card closing while its task runs on, as a pill. */
+/**
+ * KeepInfo is a card closing while its task runs on, as a pill. Title is
+ * empty while the task has no name yet.
+ */
 export interface KeepInfo {
   sessionId?: string;
-  title: string;
+  title?: string;
   state: PillState;
   fixedTitle: boolean;
 }
@@ -125,10 +128,10 @@ export interface OverlayHighlight {
   focus: LocalRect | null;
 }
 
-/** PillItem is one pill. */
+/** PillItem is one pill; Title is empty while its task has no name yet. */
 export interface PillItem {
   id: string;
-  title: string;
+  title?: string;
   state: PillState;
 }
 

@@ -43,7 +43,7 @@ type PetMessage =
 async function answer(askId: string) {
   send({ type: 'ask-accepted', askId, sessionId: sid, title: '假会话' })
   send({ type: 'ask-step', askId, sessionId: sid })
-  send({ type: 'ask-activity', askId, sessionId: sid, text: '正在搜索网页' })
+  send({ type: 'ask-activity', askId, sessionId: sid, activity: { step: 'search', detail: '指认' } })
   for (const chunk of ANSWER.match(/[\s\S]{1,40}/g) ?? []) {
     send({ type: 'ask-delta', askId, sessionId: sid, text: chunk })
     await sleep(Number(process.env.FAKE_DELTA_MS) || 30)

@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { activityText } from './activity.ts'
+import { activityOf } from './activity.ts'
 import { composeAsk, composeFirst, isOurPreamble } from './compose.ts'
 import { type Logger, PET_APP_DIR, ensureRuntime } from './runtime.ts'
 
@@ -332,7 +332,7 @@ export function apply(ctx: DshContext) {
         callSummaries.set(data.callId, detail)
         if (callSummaries.size > 200) callSummaries.delete(callSummaries.keys().next().value!)
         push(sid, classifyTool(String(data.name)), { tool: data.name, detail })
-        if (asks.has(sid)) link.send({ type: 'ask-activity', askId: asks.get(sid), sessionId: sid, text: activityText(String(data.name ?? ''), detail) })
+        if (asks.has(sid)) link.send({ type: 'ask-activity', askId: asks.get(sid), sessionId: sid, activity: activityOf(String(data.name ?? ''), detail) })
         break
       }
       case 'tool/result':

@@ -277,7 +277,7 @@ ipcMain.on('card-keep', (e, info: KeepInfo | undefined) => {
   if (card === c) card = undefined
   const id = `card${c.id}`
   pills = pills.filter(p => p.id !== id)
-  pills.push({ id, sessionId, win: c, fixedTitle: !!info?.fixedTitle, title: String(info?.title || '新任务'), state: info?.state === 'done' || info?.state === 'error' ? info.state : 'run' })
+  pills.push({ id, sessionId, win: c, fixedTitle: !!info?.fixedTitle, title: info?.title || undefined, state: info?.state === 'done' || info?.state === 'error' ? info.state : 'run' })
   c.once('closed', () => { pills = pills.filter(p => p.win !== c); updatePills() })
   updatePills()
 })

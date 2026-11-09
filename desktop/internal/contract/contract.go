@@ -97,18 +97,19 @@ const (
 	PillError PillState = "error"
 )
 
-// KeepInfo is a card closing while its task runs on, as a pill.
+// KeepInfo is a card closing while its task runs on, as a pill. Title is
+// empty while the task has no name yet.
 type KeepInfo struct {
 	SessionID  string    `json:"sessionId,omitempty"`
-	Title      string    `json:"title"`
+	Title      string    `json:"title,omitempty"`
 	State      PillState `json:"state"`
 	FixedTitle bool      `json:"fixedTitle"`
 }
 
-// PillItem is one pill.
+// PillItem is one pill; Title is empty while its task has no name yet.
 type PillItem struct {
 	ID    string    `json:"id"`
-	Title string    `json:"title"`
+	Title string    `json:"title,omitempty"`
 	State PillState `json:"state"`
 }
 
