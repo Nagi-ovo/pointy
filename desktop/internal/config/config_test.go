@@ -4,6 +4,7 @@ import (
 	"encoding/json/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -80,7 +81,7 @@ func TestTokenIsStable(t *testing.T) {
 	if a != b {
 		t.Fatal("token changed between reads")
 	}
-	if st, _ := os.Stat(filepath.Join(home, "token")); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(filepath.Join(home, "token")); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("token mode %v", st.Mode())
 	}
 }
