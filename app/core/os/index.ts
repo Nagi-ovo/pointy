@@ -1,6 +1,6 @@
-// 屏幕坐标：Windows 是物理像素，macOS 是点
+// Electron 只在 Windows 上跑了（macOS 由 desktop/ 的 Go 程序接管），屏幕坐标是物理像素
 import type { Os } from './types.ts'
 
-const os: Os = process.platform === 'darwin' ? require('./darwin') : require('./win32')
+const os: Os = require('./win32')
 
 export default os
