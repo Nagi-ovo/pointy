@@ -68,7 +68,7 @@ func start(home, root string, pages fs.FS, logError func(string, any)) *agent.DS
 		mygo.App.Exit(1)
 		return nil
 	}
-	sys := newDesktop()
+	sys := newDesktop(root)
 	settings := config.LoadSettings(home)
 	vis := ui.NewVisibility(settings)
 
