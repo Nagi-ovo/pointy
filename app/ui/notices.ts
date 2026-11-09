@@ -148,7 +148,7 @@ export async function showWelcome() {
     title: 'Pointy 已就位',
     body: [
       `**晃一下鼠标**进入指认，指到网页、文档、聊天窗口里的任意内容，点一下就能问 ${deps.agentName?.() ?? 'AI'}。`,
-      `${process.platform === 'darwin' ? '菜单栏' : '托盘'}里的鲸鱼图标可以调晃动灵敏度、开勿扰。`,
+      '托盘里的鲸鱼图标可以调晃动灵敏度、开勿扰。',
       '在浏览器里用的话，推荐装上 Pointy 的浏览器扩展，能指认到网页里具体的段落。',
     ],
     buttons: [{ id: 'later', label: '以后再说' }, { id: 'ext', label: '安装浏览器扩展', primary: true }],
