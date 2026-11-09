@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Pointy 指哪问哪",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "晃一下鼠标指认网页上的内容，或右键「问 Pointy」，把指到的内容、网址和标题交给本机的 Pointy。只在被叫到时读页面。",
   "permissions": ["storage", "scripting", "contextMenus", "alarms"],
   "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js" },
+  "background": { "service_worker": "background.js", "type": "module" },
   "action": { "default_title": "Pointy", "default_popup": "popup.html" },
   "icons": { "128": "icon.png" },
   "web_accessible_resources": [{ "resources": ["cursor-32.png", "cursor-48.png", "cursor-64.png"], "matches": ["<all_urls>"] }]

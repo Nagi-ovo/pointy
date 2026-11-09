@@ -3,7 +3,7 @@
  *
  * - Carries Pointy itself in ../pet and starts it on the first DSH run where it
  *   is not already running, after downloading its Electron runtime once
- *   (see runtime.js). Pointy quits on its own when DSH goes away.
+ *   (see runtime.ts). Pointy quits on its own when DSH goes away.
  *
  * - Listens to `session/event`, `agent/status` and `agent/error` and pushes a
  *   compact pet state (thinking / running / editing / ... / done / error) to
@@ -26,7 +26,65 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { PET_APP_DIR, ensureRuntime } from './runtime.js'
+import { type Logger, PET_APP_DIR, ensureRuntime } from './runtime.ts'
+
+interface Route { provider: string, model: string }
+interface Agent { followup(message: unknown): void }
+/**
+ * The DSH plugin context, as far as this plugin uses it. Event payloads and
+ * the services behind `get()` are DSH internals and stay untyped here.
+ */
+interface DshContext {
+  logger?: Logger
+  llm: {
+    prepareCall(
+      request: Route & { maxTokens: number },
+      signal: AbortSignal,
+      adjust: (controls: Record<string, unknown>, model: { reasoning?: { efforts?: { id: string }[] } }) => Record<string, unknown>,
+    ): Promise<{ config: object, stream(request: object): AsyncIterable<unknown> }>
+    resolveCallConfig?(request: Route & { reasoningEffort?: string }): Promise<Route & { reasoningEffort?: string }>
+  }
+  agents: { get(sessionId: string): Agent | undefined }
+  on(event: string, listener: (...args: any[]) => unknown, options?: boolean | { global: boolean }): void
+  get(service: string): any
+  effect(setup: () => () => void, label: string): void
+  inject(deps: string[], setup: (ctx: any) => () => Promise<void>): void
+}
+
+/** A model the card picked; `sessionOnly` leaves DSH's default model alone. */
+interface ModelChoice { provider?: unknown, model?: unknown, reasoningEffort?: unknown, sessionOnly?: unknown }
+/** Messages from the pet once it has authenticated. */
+type PetMessage =
+  | { type: 'approve', id: string, decision: unknown }
+  | { type: 'files', paths: unknown }
+  | { type: 'line-request', reqId: string, state: string, detail?: unknown }
+  | { type: 'sessions-request', reqId: string }
+  | { type: 'sessions-search', reqId: string, query?: unknown }
+  | { type: 'focus', sessionId: unknown }
+  | { type: 'suggest-request', reqId: string, context?: unknown }
+  | { type: 'ask', askId: string, target: string, text: unknown, model?: ModelChoice, image?: unknown, images?: unknown, workspaceId?: string }
+/** The pet's handshake, before authentication. */
+type HandshakeMessage = { type: 'challenge', nonce: string } | { type: 'hello-ok', proof: unknown }
+
+interface SessionItem {
+  sessionId: string
+  title?: string
+  updatedAt?: number | string
+  running?: boolean
+  model?: Route & { reasoningEffort?: string }
+  workspace?: string
+  snippet?: string
+}
+interface Workspace { id: string, title: string, sessionIds: string[] }
+/** An entry of DSH's workspace registry. */
+interface RegisteredWorkspace { id: string, title: string, path: string, sessionIds: string[] }
+interface WorkspaceRegistry { list(): RegisteredWorkspace[], delete(id: string): Promise<void> }
+/** DSH's model picker catalog. */
+interface ModelCatalog {
+  groups?: { id: string, name: string, models: { id: string, name?: string, reasoning?: { efforts?: { id: string, name?: string }[], defaultEffort?: string } }[] }[]
+  default?: { provider?: string, model?: string, reasoningEffort?: string }
+}
+interface Suggestion { label: string, prompt: string }
 
 export const name = 'pointy'
 
@@ -42,15 +100,15 @@ const RECONNECT_MS = 3000
 const STALE_EVENT_MS = 30_000
 const LINE_MIN_INTERVAL_MS = 15_000
 const LINE_TIMEOUT_MS = 15_000
-const DEFAULT_ROUTE = { provider: 'deepseek-account', model: 'deepseek-flash' }
-/** Private RPC channel the browser half (lib/client.js) polls for sessions to open. */
+const DEFAULT_ROUTE: Route = { provider: 'deepseek-account', model: 'deepseek-flash' }
+/** Private RPC channel the browser half (lib/client.ts) polls for sessions to open. */
 const RPC_CHANNEL = '/pointy'
 const FOCUS_POLL_MS = 20_000
 const FOCUS_PENDING_MS = 8_000
 const MAX_DROPPED_FILES = 20
 /** Desktop DSH runs plugins through dsh-desktop-host/lib/index.js; the web UI (`dsh <profile>`) goes through lib/cli.js. */
 const DESKTOP = process.argv.some((a) => /dsh-desktop-host[\\/]lib[\\/]index\.js$/.test(a))
-const PLUGIN_VERSION = (() => {
+const PLUGIN_VERSION: string = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(PET_APP_DIR, '..', 'package.json'), 'utf8')).version } catch { return '?' }
 })()
 
@@ -60,7 +118,7 @@ const PERSONA = [
   '只输出一句中文台词，15 字以内，口语，不要引号、不要表情符号、不要解释。',
 ].join('\n')
 
-const STATE_HINT = {
+const STATE_HINT: Record<string, string> = {
   idle: '主人没在让你干活，你在发呆',
   thinking: '你正在想下一步怎么做',
   running: '你在终端里执行命令',
@@ -76,7 +134,7 @@ const STATE_HINT = {
 }
 
 /** Map a DSH tool name to the pet's activity state. */
-function classifyTool(toolName) {
+function classifyTool(toolName: string) {
   const n = toolName.toLowerCase()
   if (/^(pwsh|bash|terminal|shell|run_code|job_|ptc)/.test(n)) return 'running'
   if (/^(write|edit|str_replace|apply_patch|multi_edit)/.test(n)) return 'editing'
@@ -86,24 +144,24 @@ function classifyTool(toolName) {
 }
 
 /** A one-line, display-only summary of a tool call; never the full arguments. */
-function summarizeCall(toolName, rawArgs) {
-  let args
+function summarizeCall(toolName: string, rawArgs: string) {
+  let args: Record<string, unknown> | null
   try { args = JSON.parse(rawArgs) } catch { return '' }
   if (args === null || typeof args !== 'object') return ''
   const pick = args.description ?? args.command ?? args.path ?? args.file_path ?? args.url ?? args.query ?? args.pattern
   return typeof pick === 'string' ? pick.replace(/\s+/g, ' ').slice(0, 160) : ''
 }
 
-function textOf(content) {
+function textOf(content: unknown) {
   if (!Array.isArray(content)) return ''
   return content.filter(c => c?.type === 'text').map(c => c.text).join('\n')
 }
 
-function hmac(token, data) {
+function hmac(token: string, data: string) {
   return crypto.createHmac('sha256', token).update(data).digest('hex')
 }
 
-function safeEqual(a, b) {
+function safeEqual(a: unknown, b: string) {
   return typeof a === 'string' && typeof b === 'string' && a.length === b.length &&
     crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))
 }
@@ -116,35 +174,46 @@ function openPetLog() {
 }
 
 /** Spawn the bundled pet detached on the downloaded Electron runtime. */
-async function launchPet(logger) {
+async function launchPet(logger: Logger) {
   let exe
   try {
     exe = await ensureRuntime(logger)
   } catch (error) {
-    return logger.warn(`pointy: cannot start Pointy: ${error.message}`)
+    return logger.warn(`pointy: cannot start Pointy: ${(error as Error).message}`)
   }
   logger.info(`pointy: starting Pointy: ${exe} ${PET_APP_DIR}`)
   // The DSH host runs Electron in node mode; the pet must not inherit that.
   // POINTY_HOST_PID：拉起它的 DSH 插件宿主；宿主没了、插件又没连着，Pointy 就自己退
-  const env = { ...process.env, POINTY_MANAGED: '1', POINTY_HOST_PID: String(process.pid) }
+  const env: NodeJS.ProcessEnv = { ...process.env, POINTY_MANAGED: '1', POINTY_HOST_PID: String(process.pid) }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.NODE_OPTIONS
   try {
     // stdout/stderr must not be the NUL device: koffi flushes stderr at exit, FlushFileBuffers
     // fails on NUL, and koffi's error path re-locks the stream mutex and aborts (0xC0000409).
     const out = openPetLog()
-    const child = spawn(exe, [PET_APP_DIR], { cwd: PET_APP_DIR, env, detached: true, stdio: ['ignore', out, out] })
+    const child = spawn(exe!, [PET_APP_DIR], { cwd: PET_APP_DIR, env, detached: true, stdio: ['ignore', out, out] })
     fs.closeSync(out)
     child.on('error', (error) => logger.warn(`pointy: failed to start Pointy: ${error.message}`))
     child.unref()
   } catch (error) {
-    logger.warn(`pointy: failed to start Pointy: ${error.message}`)
+    logger.warn(`pointy: failed to start Pointy: ${(error as Error).message}`)
   }
 }
 
 /** Reconnecting, HMAC-authenticated WebSocket client to the pet. */
 class PetLink {
-  constructor(logger, onMessage) {
+  logger: Logger
+  onMessage: (msg: PetMessage) => void
+  ws: WebSocket | undefined
+  authed: boolean
+  stopped: boolean
+  timer: ReturnType<typeof setTimeout> | undefined
+  onReady: () => void
+  onLost: () => void
+  /** Called when nothing is listening on the port, i.e. the pet is not running. */
+  onUnreachable: () => void
+
+  constructor(logger: Logger, onMessage: (msg: PetMessage) => void) {
     this.logger = logger
     this.onMessage = onMessage
     this.ws = undefined
@@ -153,7 +222,6 @@ class PetLink {
     this.timer = undefined
     this.onReady = () => {}
     this.onLost = () => {}
-    /** Called when nothing is listening on the port, i.e. the pet is not running. */
     this.onUnreachable = () => {}
   }
 
@@ -170,7 +238,7 @@ class PetLink {
 
   connect() {
     if (this.stopped) return
-    let token
+    let token: string
     try { token = fs.readFileSync(TOKEN_FILE, 'utf8').trim() } catch {
       this.onUnreachable()
       return this.retry()
@@ -181,7 +249,7 @@ class PetLink {
     this.ws = ws
     ws.addEventListener('open', () => { opened = true })
     ws.addEventListener('message', (ev) => {
-      let msg
+      let msg: HandshakeMessage | PetMessage
       try { msg = JSON.parse(String(ev.data)) } catch { return }
       if (msg.type === 'challenge') {
         ws.send(JSON.stringify({ type: 'hello', v: 1, nonce, proof: hmac(token, `plugin|${msg.nonce}`) }))
@@ -214,28 +282,28 @@ class PetLink {
     this.timer = setTimeout(() => this.connect(), RECONNECT_MS)
   }
 
-  send(msg) {
+  send(msg: object) {
     if (!this.authed || this.ws?.readyState !== WebSocket.OPEN) return false
     this.ws.send(JSON.stringify(msg))
     return true
   }
 }
 
-export function apply(ctx) {
-  const logger = ctx.logger ?? console
+export function apply(ctx: DshContext) {
+  const logger: Logger = ctx.logger ?? console
   /** Most recent route seen in a `request/header`, reused for pet lines. */
-  let route
+  let route: Route | undefined
   /** Most recently active root session id: target for dropped files. */
-  let activeRoot
-  const titles = new Map()
+  let activeRoot: string | undefined
+  const titles = new Map<string, string>()
   /** callId -> summary, bounded; lets the approval card show what will run. */
-  const callSummaries = new Map()
+  const callSummaries = new Map<string, string>()
   /** approval id -> answer(decision) */
-  const pendingApprovals = new Map()
+  const pendingApprovals = new Map<string, (decision: 'allow' | 'reject' | 'detach') => void>()
   /** Last state per session, replayed to a pet that connects mid-task. */
-  const lastState = new Map()
+  const lastState = new Map<string, object>()
   /** sessionId -> askId of the card currently following that session */
-  const asks = new Map()
+  const asks = new Map<string, string>()
   let lastLineAt = 0
   let lineBusy = false
 
@@ -258,22 +326,22 @@ export function apply(ctx) {
   }
 
   // Where "open in DSH" should go: the desktop window, or the browser tab serving the web UI.
-  let webOrigin
+  let webOrigin: string | undefined
   const uiInfo = () => ({ type: 'ui', kind: DESKTOP ? 'desktop' : 'web', origin: DESKTOP ? undefined : webOrigin })
-  function noteOrigin(origin) {
+  function noteOrigin(origin: unknown) {
     if (DESKTOP || typeof origin !== 'string' || !/^https?:\/\/[^/]+$/.test(origin) || origin === webOrigin) return
     webOrigin = origin
     link.send(uiInfo())
   }
 
-  function push(sessionId, state, extra = {}) {
+  function push(sessionId: string, state: string, extra: object = {}) {
     const msg = { type: 'state', sessionId, title: titles.get(sessionId), state, at: Date.now(), ...extra }
     lastState.set(sessionId, msg)
-    if (lastState.size > 20) lastState.delete(lastState.keys().next().value)
+    if (lastState.size > 20) lastState.delete(lastState.keys().next().value!)
     link.send(msg)
   }
 
-  function isRoot(session) {
+  function isRoot(session: any) {
     const depth = session?.header?.delegationDepth ?? session?.delegationDepth
     return depth === undefined || depth === 0
   }
@@ -305,7 +373,7 @@ export function apply(ctx) {
       case 'tool/call': {
         const detail = summarizeCall(data.name, data.arguments)
         callSummaries.set(data.callId, detail)
-        if (callSummaries.size > 200) callSummaries.delete(callSummaries.keys().next().value)
+        if (callSummaries.size > 200) callSummaries.delete(callSummaries.keys().next().value!)
         push(sid, classifyTool(String(data.name)), { tool: data.name, detail })
         if (asks.has(sid)) link.send({ type: 'ask-activity', askId: asks.get(sid), sessionId: sid, tool: data.name, detail })
         break
@@ -360,7 +428,7 @@ export function apply(ctx) {
     return new Promise((resolve) => {
       let settled = false
       let uiDeclined = false
-      const finish = (outcome, by) => {
+      const finish = (outcome: string, by: 'dsh' | 'pet') => {
         if (settled) return
         settled = true
         pendingApprovals.delete(id)
@@ -378,7 +446,7 @@ export function apply(ctx) {
         finish(decision === 'allow' ? 'allowed-once' : 'rejected', 'pet')
         withdraw.abort(new Error('answered on Pointy'))
       })
-      Promise.resolve().then(next).then((outcome) => {
+      Promise.resolve().then<string>(next).then((outcome) => {
         // No UI answered: keep the question open for the pet alone.
         if (outcome === 'unavailable' && link.authed && !settled) { uiDeclined = true; return }
         finish(outcome, 'dsh')
@@ -404,7 +472,7 @@ export function apply(ctx) {
     return next()
   }, true)
 
-  function handlePetMessage(msg) {
+  function handlePetMessage(msg: PetMessage) {
     if (msg.type === 'approve') {
       const answer = pendingApprovals.get(msg.id)
       if (answer && (msg.decision === 'allow' || msg.decision === 'reject')) answer(msg.decision)
@@ -448,10 +516,10 @@ export function apply(ctx) {
   }
 
   /** Root sessions for the card's target picker, newest first. */
-  async function listSessions() {
+  async function listSessions(): Promise<SessionItem[]> {
     const controller = ctx.get('sessionController')
-    const seen = new Map([...titles].map(([id, title]) => [id, { sessionId: id, title }]))
-    const workspaceOf = new Map(workspaceList().flatMap(w => w.sessionIds.map(id => [id, w.title])))
+    const seen = new Map<string, SessionItem>([...titles].map(([id, title]) => [id, { sessionId: id, title }]))
+    const workspaceOf = new Map(workspaceList().flatMap(w => w.sessionIds.map((id): [string, string] => [id, w.title])))
     if (controller) {
       const { items } = await controller.list({}, AbortSignal.timeout(5000))
       for (const item of items) {
@@ -470,7 +538,7 @@ export function apply(ctx) {
    * Sessions matching the card's search box: title matches first, then
    * sessions whose messages contain the text (DSH's own session search).
    */
-  async function searchSessions(query) {
+  async function searchSessions(query: string) {
     const q = query.trim()
     if (!q) return []
     const all = await listSessions()
@@ -486,15 +554,15 @@ export function apply(ctx) {
           if (s && !hits.includes(s)) hits.push({ ...s, snippet: item.snippet })
         }
       } catch (error) {
-        logger.warn(`pointy: session search failed: ${error.message}`)
+        logger.warn(`pointy: session search failed: ${(error as Error).message}`)
       }
     }
     return hits.slice(0, 20)
   }
 
   /** Workspaces a new task can go to, as the DSH sidebar names them. */
-  function workspaceList() {
-    const registry = ctx.get('workspaceRegistry')
+  function workspaceList(): Workspace[] {
+    const registry: WorkspaceRegistry | undefined = ctx.get('workspaceRegistry')
     return (registry?.list() ?? []).map(w => ({
       id: w.id,
       title: w.title || String(w.path ?? '').split(/[\\/]/).filter(Boolean).pop() || w.id,
@@ -506,7 +574,7 @@ export function apply(ctx) {
   async function modelCatalog() {
     const controller = ctx.get('sessionController')
     if (!controller?.modelCatalog) return {}
-    const catalog = await controller.modelCatalog()
+    const catalog: ModelCatalog | undefined = await controller.modelCatalog()
     const models = (catalog?.groups ?? []).flatMap(g => g.models.map(m => ({
       provider: g.id,
       providerName: g.name,
@@ -526,7 +594,7 @@ export function apply(ctx) {
    * in and pulled the model toward "is this related to my project?", so the
    * prompt sees only the pointed content.
    */
-  async function suggest({ context }) {
+  async function suggest({ context }: { context?: unknown }): Promise<Suggestion[]> {
     const system = [
       '用户在屏幕上指着一块内容（网页评论、帖子、issue、代码、报错、图片等），准备交给他的 AI 助手。你替他想 2 个下一步最想让助手做的事。',
       '',
@@ -559,9 +627,9 @@ export function apply(ctx) {
     for await (const chunk of call.stream({ ...call.config, messages, system, purpose: 'pointy-suggest', signal })) assembler.push(chunk)
     const text = assembler.blocks().filter(b => b.type === 'text').map(b => b.text).join('')
     const json = text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)
-    const items = JSON.parse(json)
+    const items: { label?: unknown, prompt?: unknown }[] = JSON.parse(json)
     return items
-      .filter(i => typeof i?.label === 'string' && typeof i?.prompt === 'string')
+      .filter((i): i is Suggestion => typeof i?.label === 'string' && typeof i?.prompt === 'string')
       .slice(0, 2)
       // 不按字数硬切（会切成"stream uploads 的"这种半句），太长的由卡片按宽度显示省略号
       .map(i => ({ label: i.label.trim().slice(0, 60), prompt: i.prompt.slice(0, 600) }))
@@ -569,7 +637,7 @@ export function apply(ctx) {
 
   /** New tasks go to the default workspace (unless the card picked another) so they show up in the DSH sidebar. */
   function defaultWorkspace() {
-    const registry = ctx.get('workspaceRegistry')
+    const registry: WorkspaceRegistry | undefined = ctx.get('workspaceRegistry')
     const all = registry?.list() ?? []
     return all.find(w => /default-workspace$/i.test(w.path)) ??
       all.find(w => activeRoot !== undefined && w.sessionIds.includes(activeRoot)) ??
@@ -582,7 +650,7 @@ export function apply(ctx) {
    * workspace keeps its folder and sessions (they become ungrouped).
    */
   async function removeNotebookWorkspace() {
-    const registry = ctx.get('workspaceRegistry')
+    const registry: WorkspaceRegistry | undefined = ctx.get('workspaceRegistry')
     if (!registry) return
     for (const w of registry.list()) {
       if (w.title === '桌宠小本本' && /[\\/]dsh-pet-notebook$/i.test(w.path)) {
@@ -590,19 +658,19 @@ export function apply(ctx) {
           await registry.delete(w.id)
           logger.info(`pointy: removed the old notebook workspace registration ${w.path}`)
         } catch (error) {
-          logger.warn(`pointy: could not remove the notebook workspace: ${error.message}`)
+          logger.warn(`pointy: could not remove the notebook workspace: ${(error as Error).message}`)
         }
       }
     }
   }
 
-  async function ask({ askId, target, text, model, image, images, workspaceId }) {
+  async function ask({ askId, target, text, model, image, images, workspaceId }: Extract<PetMessage, { type: 'ask' }>) {
     if (typeof text !== 'string' || !text.trim()) throw new Error('没有内容')
     const controller = ctx.get('sessionController')
-    let sessionId = target
+    let sessionId: string = target
     if (target === 'new') {
       if (!controller) throw new Error('这个 DSH 版本没有会话服务，没法新建任务')
-      const chosen = ctx.get('workspaceRegistry')?.list().find(w => w.id === workspaceId)
+      const chosen = (ctx.get('workspaceRegistry') as WorkspaceRegistry | undefined)?.list().find(w => w.id === workspaceId)
       const workspace = chosen ?? defaultWorkspace()
       sessionId = (await controller.create(workspace ? { workspaceId: workspace.id } : {})).sessionId
     }
@@ -635,7 +703,7 @@ export function apply(ctx) {
     }
     const content = await promptContent(text, Array.isArray(images) ? images : [image])
     asks.set(sessionId, askId)
-    if (asks.size > 20) asks.delete(asks.keys().next().value)
+    if (asks.size > 20) asks.delete(asks.keys().next().value!)
     agent.followup(createUserMessage({ content, source: { kind: 'user' } }))
     return sessionId
   }
@@ -646,10 +714,10 @@ export function apply(ctx) {
    * own attachment admission, the same path as images pasted into the DSH
    * composer, so they are stored with the session like those.
    */
-  async function promptContent(text, images) {
+  async function promptContent(text: string, images: unknown[]) {
     const parts = images
       .map(image => typeof image === 'string' ? image.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/) : null)
-      .filter(Boolean)
+      .filter((match): match is RegExpMatchArray => Boolean(match))
       .slice(0, 4)
       .map(match => ({ type: 'image', mediaType: match[1], data: match[2] }))
     if (!parts.length) return [{ type: 'text', text }]
@@ -658,7 +726,7 @@ export function apply(ctx) {
     return attachments.admitPromptContent([{ type: 'text', text }, ...parts])
   }
 
-  function deliverFiles(paths) {
+  function deliverFiles(paths: unknown) {
     if (!Array.isArray(paths) || paths.length === 0) return { ok: false, error: '没收到文件' }
     const files = paths
       .filter(p => typeof p === 'string' && path.isAbsolute(p) && fs.existsSync(p))
@@ -671,7 +739,7 @@ export function apply(ctx) {
     return { ok: true, sessionId: activeRoot, count: files.length }
   }
 
-  async function generateLine(req) {
+  async function generateLine(req: Extract<PetMessage, { type: 'line-request' }>) {
     const now = Date.now()
     if (lineBusy || now - lastLineAt < LINE_MIN_INTERVAL_MS) throw new Error('rate limited')
     lineBusy = true
@@ -708,9 +776,9 @@ export function apply(ctx) {
 
   // "在 DSH 中打开"：Pointy发来会话 id，交给 DSH 页面里的插件界面那一半去 openSession。
   // 页面那边长轮询 next-focus；没人在等时先存着，几秒内来问的还能拿到。
-  const focusWaiters = new Set()
-  let pendingFocus // { sessionId, at }
-  function requestFocus(sessionId) {
+  const focusWaiters = new Set<(sessionId: string | null) => void>()
+  let pendingFocus: { sessionId: string, at: number } | undefined
+  function requestFocus(sessionId: string) {
     if (focusWaiters.size) {
       for (const resolve of focusWaiters) resolve(sessionId)
       focusWaiters.clear()
@@ -718,20 +786,20 @@ export function apply(ctx) {
       pendingFocus = { sessionId, at: Date.now() }
     }
   }
-  function nextFocus() {
+  function nextFocus(): Promise<string | null> {
     if (pendingFocus && Date.now() - pendingFocus.at < FOCUS_PENDING_MS) {
       const { sessionId } = pendingFocus
       pendingFocus = undefined
       return Promise.resolve(sessionId)
     }
     return new Promise((resolve) => {
-      const done = (value) => { clearTimeout(timer); focusWaiters.delete(done); resolve(value) }
+      const done = (value: string | null) => { clearTimeout(timer); focusWaiters.delete(done); resolve(value) }
       const timer = setTimeout(() => done(null), FOCUS_POLL_MS)
       focusWaiters.add(done)
     })
   }
   ctx.inject(['connection'], (connectionCtx) => {
-    const dispose = connectionCtx.connection.rpc.handle(RPC_CHANNEL, async (endpoint, params) => {
+    const dispose = connectionCtx.connection.rpc.handle(RPC_CHANNEL, async (endpoint: string, params: any) => {
       if (endpoint === 'next-focus') {
         noteOrigin(params?.origin)
         return { ok: true, value: await nextFocus() }

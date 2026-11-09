@@ -2,18 +2,41 @@
 // 只在这两种时候读页面，平时不碰任何标签页。
 // Pointy默认端口；storage 里存了 port 就用那个（Pointy改过 POINTY_PORT 时）
 const DEFAULT_PORT = 47321
-const petUrl = async () => `ws://127.0.0.1:${(await chrome.storage.local.get('port')).port ?? DEFAULT_PORT}`
+/** 扩展存在 chrome.storage.local 里的东西 */
+interface Stored { port?: number, id?: string, token?: string }
+const petUrl = async () => `ws://127.0.0.1:${(await chrome.storage.local.get<Stored>('port')).port ?? DEFAULT_PORT}`
 const BROWSER = navigator.userAgent.includes('Edg/') ? 'edge' : 'chrome'
 const KEEPALIVE_MS = 20_000
 
-let ws
+/** Pointy 发给扩展的消息（WebSocket 上的 JSON） */
+type PetMessage =
+  | { type: 'challenge', nonce: string }
+  | { type: 'hello-ok', proof: string }
+  | { type: 'grab', reqId: string }
+  | { type: 'pick-abort', reqId: string }
+  | { type: 'focus-tab', origin: unknown }
+  | { type: 'reload' }
+  | { type: 'pick-release', reqId: string }
+  | { type: 'pick-start', reqId: string, cursor?: PointyCursor, urlHint?: string }
+  | { type: 'paired', id: string, token: string }
+  | { type: 'pair-denied' }
+  | { type: 'pair-busy' }
+
+/** 页面里取到的选区；碰到密码框只带 blocked */
+interface PageSelection { blocked?: string, text?: string, before?: string, after?: string }
+interface GrabResult extends PageSelection { url?: string, pageTitle?: string, browser?: string }
+type PairResult = { ok: true } | { ok: false, error: string }
+/** popup.ts 和 pick.ts 发给这里的消息 */
+type RuntimeMessage = PickResultMessage | { type: 'pair' } | { type: 'status' } | { type: 'unpair' }
+
+let ws: WebSocket | undefined
 let authed = false
-let keepalive
+let keepalive: ReturnType<typeof setInterval> | undefined
 
 const enc = new TextEncoder()
-const hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+const hex = (buf: ArrayBuffer | Uint8Array) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
 
-async function hmac(token, data) {
+async function hmac(token: string, data: string) {
   const key = await crypto.subtle.importKey('raw', enc.encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   return hex(await crypto.subtle.sign('HMAC', key, enc.encode(data)))
 }
@@ -22,7 +45,7 @@ const randomHex = () => hex(crypto.getRandomValues(new Uint8Array(16)))
 
 async function connect() {
   if (ws && ws.readyState <= WebSocket.OPEN) return
-  const { id, token } = await chrome.storage.local.get(['id', 'token'])
+  const { id, token } = await chrome.storage.local.get<Stored>(['id', 'token'])
   // 还没配对：自己去问 Pointy，Pointy 弹窗让用户点"允许"
   if (!id || !token) { if (Date.now() >= pairQuietUntil) await pair(false); return }
   const nonce = randomHex()
@@ -30,7 +53,7 @@ async function connect() {
   ws = sock
   authed = false
   sock.onmessage = async (ev) => {
-    const msg = JSON.parse(ev.data)
+    const msg: PetMessage = JSON.parse(ev.data)
     if (msg.type === 'challenge') {
       sock.send(JSON.stringify({ type: 'hello', role: 'extension', id, browser: BROWSER, version: chrome.runtime.getManifest().version, nonce, proof: await hmac(token, `ext|${msg.nonce}`) }))
     } else if (msg.type === 'hello-ok') {
@@ -43,7 +66,7 @@ async function connect() {
       const result = await grabActiveTab()
       sock.send(JSON.stringify({ type: 'grab-result', reqId: msg.reqId, ...result }))
     } else if (authed && msg.type === 'pick-abort') {
-      if (pickTab) chrome.tabs.sendMessage(pickTab.id, { type: 'pick-abort' }).catch(() => {})
+      if (pickTab) chrome.tabs.sendMessage<PickControlMessage>(pickTab.id!, { type: 'pick-abort' }).catch(() => {})
       pickReq = undefined
     } else if (authed && msg.type === 'focus-tab') {
       focusTab(msg.origin)
@@ -53,7 +76,7 @@ async function connect() {
     } else if (authed && msg.type === 'pick-release') {
       const tabId = heldTabs.get(msg.reqId)
       heldTabs.delete(msg.reqId)
-      if (tabId !== undefined) chrome.tabs.sendMessage(tabId, { type: 'pick-release', reqId: msg.reqId }).catch(() => {})
+      if (tabId !== undefined) chrome.tabs.sendMessage<PickControlMessage>(tabId, { type: 'pick-release', reqId: msg.reqId }).catch(() => {})
     } else if (authed && msg.type === 'pick-start') {
       const ok = await startPick(msg.cursor, msg.urlHint)
       if (!ok) sock.send(JSON.stringify({ type: 'pick-unavailable', reqId: msg.reqId }))
@@ -71,22 +94,23 @@ async function connect() {
 }
 
 /** 在页面里执行：取选区和它前后的文字。密码框直接拒绝。 */
-function extractSelection() {
-  const active = document.activeElement
+function extractSelection(): PageSelection {
+  const active = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null
   if (active && active.tagName === 'INPUT' && active.type === 'password') return { blocked: '焦点在密码框里' }
   const editable = active && (active.tagName === 'TEXTAREA' || (active.tagName === 'INPUT' && /^(text|search|url|email|)$/.test(active.type)))
   if (editable && active.selectionStart !== active.selectionEnd) {
-    const { value, selectionStart: s, selectionEnd: e } = active
+    // editable 且选区非空，两端都是数字
+    const { value, selectionStart: s, selectionEnd: e } = active as { value: string, selectionStart: number, selectionEnd: number }
     return { text: value.slice(s, e).slice(0, 20000), before: value.slice(Math.max(0, s - 400), s).trim(), after: value.slice(e, e + 400).trim() }
   }
   const sel = window.getSelection()
   const text = sel ? sel.toString() : ''
   let before = ''
   let after = ''
-  if (text && sel.rangeCount) {
-    let block = sel.getRangeAt(0).commonAncestorContainer
-    if (block.nodeType !== 1) block = block.parentElement
-    block = block.closest('p,li,td,blockquote,pre,article,section,div') || block
+  if (text && sel?.rangeCount) {
+    let block = sel.getRangeAt(0).commonAncestorContainer as HTMLElement
+    if (block.nodeType !== 1) block = block.parentElement as HTMLElement
+    block = block.closest<HTMLElement>('p,li,td,blockquote,pre,article,section,div') || block
     const full = block.innerText || ''
     const needle = text.trim().slice(0, 60)
     const at = needle ? full.indexOf(needle) : -1
@@ -94,22 +118,22 @@ function extractSelection() {
       before = full.slice(Math.max(0, at - 400), at).trim()
       after = full.slice(at + text.trim().length, at + text.trim().length + 400).trim()
     }
-    if (!before) before = (block.previousElementSibling?.innerText || '').slice(-400).trim()
-    if (!after) after = (block.nextElementSibling?.innerText || '').slice(0, 400).trim()
+    if (!before) before = ((block.previousElementSibling as HTMLElement | null)?.innerText || '').slice(-400).trim()
+    if (!after) after = ((block.nextElementSibling as HTMLElement | null)?.innerText || '').slice(0, 400).trim()
   }
   return { text: text.slice(0, 20000), before, after }
 }
 
-async function grabActiveTab(tab) {
+async function grabActiveTab(tab?: chrome.tabs.Tab): Promise<GrabResult> {
   tab ??= (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]
   if (!tab) return {}
   const base = { url: tab.url, pageTitle: tab.title, browser: BROWSER }
   // chrome:// 之类的页面不让注入脚本，只带网址和标题
   if (!/^(https?|file):/.test(tab.url ?? '')) return base
   try {
-    const frames = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: extractSelection })
+    const frames = await chrome.scripting.executeScript({ target: { tabId: tab.id!, allFrames: true }, func: extractSelection })
     const blocked = frames.find(f => f.result?.blocked)
-    if (blocked) return { ...base, blocked: blocked.result.blocked }
+    if (blocked) return { ...base, blocked: blocked.result!.blocked }
     const hit = frames.find(f => f.result?.text) ?? frames.find(f => f.frameId === 0)
     return { ...base, ...(hit?.result ?? {}) }
   } catch {
@@ -117,20 +141,20 @@ async function grabActiveTab(tab) {
   }
 }
 
-let pickReq
-let pickTab
-const heldTabs = new Map() // reqId -> 还留着高亮框的标签页 id，卡片关掉时Pointy发 pick-release 过来
+let pickReq: string | undefined
+let pickTab: chrome.tabs.Tab | undefined
+const heldTabs = new Map<string, number>() // reqId -> 还留着高亮框的标签页 id，卡片关掉时Pointy发 pick-release 过来
 
 /** 往当前标签页注入指认脚本；chrome:// 之类的页面注入不了就返回 false，Pointy会改用系统层面的指认 */
-async function startPick(cursor, urlHint) {
+async function startPick(cursor: PointyCursor | undefined, urlHint: string | undefined) {
   // 正常是晃鼠标时眼前的那个标签页；Pointy也可以指定网址（测试时用，不必把窗口切到前台）
   const [tab] = urlHint
     ? (await chrome.tabs.query({})).filter(t => t.url === urlHint || t.url?.startsWith(urlHint))
     : await chrome.tabs.query({ active: true, lastFocusedWindow: true })
   if (!tab || !/^(https?|file):/.test(tab.url ?? '')) return false
   try {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: (c) => { window.__pointyStart = c }, args: [cursor ?? null] })
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['pick.js'] })
+    await chrome.scripting.executeScript({ target: { tabId: tab.id! }, func: (c: PointyCursor | null) => { window.__pointyStart = c }, args: [cursor ?? null] })
+    await chrome.scripting.executeScript({ target: { tabId: tab.id! }, files: ['pick.js'] })
     pickTab = tab
     return true
   } catch {
@@ -139,7 +163,7 @@ async function startPick(cursor, urlHint) {
 }
 
 /** 截当前可见区域，按元素位置裁出来；返回 data URL */
-async function cropElement(tab, rect, viewport) {
+async function cropElement(tab: chrome.tabs.Tab, rect: PointyRect, viewport: PickedElement['viewport']) {
   const shot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
   const bitmap = await createImageBitmap(await (await fetch(shot)).blob())
   const scale = bitmap.width / viewport.width
@@ -152,7 +176,7 @@ async function cropElement(tab, rect, viewport) {
   // 太大的缩到 1600 宽以内，够模型看清
   const k = Math.min(1, 1600 / sw)
   const canvas = new OffscreenCanvas(Math.round(sw * k), Math.round(sh * k))
-  canvas.getContext('2d').drawImage(bitmap, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+  canvas.getContext('2d')!.drawImage(bitmap, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
   const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 })
   const bytes = new Uint8Array(await blob.arrayBuffer())
   let bin = ''
@@ -160,54 +184,54 @@ async function cropElement(tab, rect, viewport) {
   return `data:image/jpeg;base64,${btoa(bin)}`
 }
 
-async function onPickResult(msg, sender) {
+async function onPickResult(msg: PickResultMessage, sender: chrome.runtime.MessageSender) {
   const reqId = pickReq
   pickReq = undefined
   if (!authed || reqId === undefined) return
-  if (msg.cancelled || !msg.result) return ws.send(JSON.stringify({ type: 'pick-cancel', reqId }))
-  const tab = sender.tab ?? pickTab
+  if (msg.cancelled || !msg.result) return ws!.send(JSON.stringify({ type: 'pick-cancel', reqId }))
+  const tab = (sender.tab ?? pickTab)!
   // 图片、视频、画布这类光看文字不知道是什么的，截那一块一起发（只在内存里传，不存盘）
   const r = msg.result
   const visual = r.kind === 'image' || r.kind === 'video' || r.tag === 'canvas' || ((r.text ?? '').trim().length < 30 && r.images?.length > 0)
   const image = visual ? await cropElement(tab, r.rect, r.viewport).catch(() => undefined) : undefined
   // 截完了，让页面把高亮框重新显示出来，卡片开着的时候一直留着
-  heldTabs.set(reqId, tab.id)
-  chrome.tabs.sendMessage(tab.id, { type: 'pick-hold', reqId }).catch(() => {})
-  ws.send(JSON.stringify({ type: 'picked', reqId, url: tab.url, pageTitle: tab.title, browser: BROWSER, element: r, image }))
+  heldTabs.set(reqId, tab.id!)
+  chrome.tabs.sendMessage<PickControlMessage>(tab.id!, { type: 'pick-hold', reqId }).catch(() => {})
+  ws!.send(JSON.stringify({ type: 'picked', reqId, url: tab.url, pageTitle: tab.title, browser: BROWSER, element: r, image }))
 }
 
 // Pointy 要把某个网页版 agent（比如 web 版 DSH）叫到前台时，把开着它的标签页切到前面
-async function focusTab(origin) {
+async function focusTab(origin: unknown) {
   if (typeof origin !== 'string' || !/^https?:\/\/[^/]+$/.test(origin)) return
   const tabs = await chrome.tabs.query({})
   const tab = tabs.find((t) => t.url?.startsWith(origin + '/'))
   // 没开着就不新开：web 版首次打开要带 token 的地址，扩展拿不到
   if (!tab) return
-  await chrome.tabs.update(tab.id, { active: true })
+  await chrome.tabs.update(tab.id!, { active: true })
   await chrome.windows.update(tab.windowId, { focused: true })
 }
 
 // 用户点了"不允许"或 Pointy 正忙着问别的：过一阵再自动问；弹窗里手动点"连接"不受这个限制
 const PAIR_QUIET_MS = 10 * 60_000
 let pairQuietUntil = 0
-let pairing
+let pairing: Promise<PairResult> | undefined
 
-function pair(manual) {
+function pair(manual: boolean) {
   if (pairing) return pairing
   pairing = (async () => {
     const url = await petUrl()
-    return new Promise((resolve) => {
+    return new Promise<PairResult>((resolve) => {
       const sock = new WebSocket(url)
-      let timer
+      let timer: ReturnType<typeof setTimeout> | undefined
       let settled = false
-      const finish = (result) => { if (settled) return; settled = true; clearTimeout(timer); pairing = undefined; resolve(result); try { sock.close() } catch {} }
+      const finish = (result: PairResult) => { if (settled) return; settled = true; clearTimeout(timer); pairing = undefined; resolve(result); try { sock.close() } catch {} }
       // Pointy 在等用户点的时候每 10 秒发一条 pair-wait；超过这个没动静就当它不在了
       const arm = () => { clearTimeout(timer); timer = setTimeout(() => finish({ ok: false, error: 'Pointy 没响应' }), 20_000) }
       arm()
       sock.onerror = () => finish({ ok: false, error: '连不上 Pointy：确认 DSH 开着、Pointy 插件已启用' })
       sock.onclose = () => finish({ ok: false, error: '连接断了' })
       sock.onmessage = async (ev) => {
-        const msg = JSON.parse(ev.data)
+        const msg: PetMessage = JSON.parse(ev.data)
         arm()
         if (msg.type === 'challenge') sock.send(JSON.stringify({ type: 'pair-request', browser: BROWSER, manual }))
         else if (msg.type === 'paired') {
@@ -233,14 +257,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   await connect()
   const result = await grabActiveTab(tab)
   if (!result.text && info.selectionText) result.text = info.selectionText
-  if (authed) ws.send(JSON.stringify({ type: 'selection', ...result }))
+  if (authed) ws!.send(JSON.stringify({ type: 'selection', ...result }))
 })
 
-chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+chrome.runtime.onMessage.addListener((msg: RuntimeMessage, sender, reply) => {
   if (msg.type === 'pick-result') { onPickResult(msg, sender); return }
   if (msg.type === 'pair') { pair(true).then(reply); return true }
   if (msg.type === 'status') {
-    chrome.storage.local.get(['id']).then(({ id }) => reply({ paired: !!id, connected: authed }))
+    chrome.storage.local.get<Stored>(['id']).then(({ id }) => reply({ paired: !!id, connected: authed }))
     return true
   }
   if (msg.type === 'unpair') { chrome.storage.local.remove(['id', 'token']).then(() => { ws?.close(); reply({ ok: true }) }); return true }
