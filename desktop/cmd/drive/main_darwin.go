@@ -15,6 +15,7 @@
 //	drive idle                seconds since the last keyboard or mouse input
 //	drive windows PID         the on-screen windows of PID, front to back, in points
 //	drive displays            the displays' bounds, in points
+//	drive extras PID          the menu bar icons of PID, in points
 package main
 
 import (
@@ -72,6 +73,9 @@ var (
 	activeDisplays          func(max uint32, ids *uint32, count *uint32) int32
 	displayBounds           func(id uint32) rect
 	kCFRunLoopDefaultMode   uintptr
+	axCreateApplication     func(pid int32) uintptr
+	axCopyAttribute         func(el, attr uintptr, out *uintptr) int32
+	axValueGetValue         func(v uintptr, typ int32, out unsafe.Pointer) bool
 )
 
 func load() {
@@ -85,6 +89,10 @@ func load() {
 	cg := open("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
 	cf := open("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
 	open("/System/Library/Frameworks/AppKit.framework/AppKit")
+	as := open("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
+	purego.RegisterLibFunc(&axCreateApplication, as, "AXUIElementCreateApplication")
+	purego.RegisterLibFunc(&axCopyAttribute, as, "AXUIElementCopyAttributeValue")
+	purego.RegisterLibFunc(&axValueGetValue, as, "AXValueGetValue")
 	purego.RegisterLibFunc(&cgEventCreateMouseEvent, cg, "CGEventCreateMouseEvent")
 	purego.RegisterLibFunc(&cgEventPost, cg, "CGEventPost")
 	purego.RegisterLibFunc(&cgEventGetLocation, cg, "CGEventGetLocation")
@@ -243,6 +251,51 @@ func windowsOf(pid int) []windowInfo {
 	return out
 }
 
+type extra struct {
+	Name       string
+	X, Y, W, H float64
+}
+
+// extras are pid's menu bar icons, which macOS 26 draws in Control
+// Center's windows, so only accessibility tells them from the others.
+func extras(pid int) []extra {
+	attr := func(el uintptr, name string) uintptr {
+		var out uintptr
+		if el == 0 || axCopyAttribute(el, uintptr(nsString(name)), &out) != 0 {
+			return 0
+		}
+		return out
+	}
+	bar := attr(axCreateApplication(int32(pid)), "AXExtrasMenuBar")
+	if bar == 0 {
+		return nil
+	}
+	items := objc.ID(attr(bar, "AXChildren"))
+	var out []extra
+	for i := range objc.Send[int](items, sel("count")) {
+		it := uintptr(items.Send(sel("objectAtIndex:"), i))
+		var p point
+		var s struct{ W, H float64 }
+		axValueGetValue(attr(it, "AXPosition"), 1, unsafe.Pointer(&p))
+		axValueGetValue(attr(it, "AXSize"), 2, unsafe.Pointer(&s))
+		name := ""
+		for _, a := range []string{"AXTitle", "AXDescription", "AXHelp"} {
+			if v := objc.ID(attr(it, a)); v != 0 && name == "" {
+				name = goString(v)
+			}
+		}
+		out = append(out, extra{Name: name, X: p.X, Y: p.Y, W: s.W, H: s.H})
+	}
+	return out
+}
+
+func goString(ns objc.ID) string {
+	if ns == 0 || !objc.Send[bool](ns, sel("isKindOfClass:"), class("NSString")) {
+		return ""
+	}
+	return objc.Send[string](ns, sel("UTF8String"))
+}
+
 func locked() bool {
 	d := objc.ID(sessionDictionary())
 	if d == 0 {
@@ -309,6 +362,8 @@ func main() {
 		print(ownerAt(point{num(args, 1), num(args, 2)}, skip))
 	case "windows":
 		print(windowsOf(int(num(args, 1))))
+	case "extras":
+		print(extras(int(num(args, 1))))
 	case "displays":
 		var ids [8]uint32
 		var n uint32
