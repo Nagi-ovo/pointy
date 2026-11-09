@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { composeFirst, composeFollowUp, isOurPreamble } from '../app/agents/compose.ts'
+import { composeAsk, composeFirst, composeFollowUp, isOurPreamble } from '../plugin/src/compose.ts'
 
 const material = (patch = {}) => ({
   site: 'github.com',
@@ -76,4 +76,11 @@ test('isOurPreamble recognises text we composed', () => {
   assert.equal(isOurPreamble('  回答要求：这是随手一问'), true)
   assert.equal(isOurPreamble('修复登录页的报错'), false)
   assert.equal(isOurPreamble(undefined), false)
+})
+
+test('an ask without followUp composes the material block, a follow-up does not', () => {
+  const ask = { material: material(), question: '这是什么意思？', mode: 'quick' as const, modeChanged: false }
+  assert.equal(composeAsk({ ...ask, followUp: false }), composeFirst(ask))
+  assert.ok(composeAsk({ ...ask, followUp: false }).startsWith('<抓取内容>\n'))
+  assert.equal(composeAsk({ ...ask, followUp: true }), '这是什么意思？')
 })

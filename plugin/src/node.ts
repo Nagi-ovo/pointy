@@ -4,6 +4,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { activityText } from './activity.ts'
+import { composeAsk, composeFirst, isOurPreamble } from './compose.ts'
 import { type Logger, PET_APP_DIR, ensureRuntime } from './runtime.ts'
 
 interface Route { provider: string, model: string }
@@ -33,8 +35,8 @@ type PetMessage =
   | { type: 'sessions-request', reqId: string }
   | { type: 'sessions-search', reqId: string, query?: unknown }
   | { type: 'focus', sessionId: unknown }
-  | { type: 'suggest-request', reqId: string, context?: unknown }
-  | { type: 'ask', askId: string, target: string, text: unknown, model?: ModelChoice, image?: unknown, images?: unknown, workspaceId?: string }
+  | Extract<CardRequest, { type: 'suggest-request' }>
+  | Omit<AskRequest, 'model' | 'images'> & { model?: ModelChoice, images?: unknown }
 type HandshakeMessage = { type: 'challenge', nonce: string } | { type: 'hello-ok', proof: unknown }
 
 interface SessionItem {
@@ -304,7 +306,11 @@ export function apply(ctx: DshContext) {
     const data = event.data ?? {}
     switch (event.type) {
       case 'session/title':
-        if (typeof data.title === 'string') {
+        // DSH 起正式标题前拿第一条消息开头当临时标题，那就是我们拼的内容块，不往外报
+        if (typeof data.title !== 'string') break
+        if (isOurPreamble(data.title)) {
+          titles.delete(sid)
+        } else {
           titles.set(sid, data.title)
           link.send({ type: 'title', sessionId: sid, title: data.title })
         }
@@ -326,7 +332,7 @@ export function apply(ctx: DshContext) {
         callSummaries.set(data.callId, detail)
         if (callSummaries.size > 200) callSummaries.delete(callSummaries.keys().next().value!)
         push(sid, classifyTool(String(data.name)), { tool: data.name, detail })
-        if (asks.has(sid)) link.send({ type: 'ask-activity', askId: asks.get(sid), sessionId: sid, tool: data.name, detail })
+        if (asks.has(sid)) link.send({ type: 'ask-activity', askId: asks.get(sid), sessionId: sid, text: activityText(String(data.name ?? ''), detail) })
         break
       }
       case 'tool/result':
@@ -471,7 +477,8 @@ export function apply(ctx: DshContext) {
       const { items } = await controller.list({}, AbortSignal.timeout(5000))
       for (const item of items) {
         if (item.archived || item.blank) continue
-        const title = item.projections?.values?.title ?? item.title ?? titles.get(item.sessionId)
+        const named = item.projections?.values?.title ?? item.title ?? titles.get(item.sessionId)
+        const title = isOurPreamble(named) ? undefined : named
         const selection = item.projections?.values?.modelSelection?.next
         const model = selection?.provider && selection?.model ? { provider: selection.provider, model: selection.model, ...(selection.reasoningEffort ? { reasoningEffort: String(selection.reasoningEffort) } : {}) } : undefined
         seen.set(item.sessionId, { sessionId: item.sessionId, title, updatedAt: item.updatedAt, running: item.running, model, workspace: workspaceOf.get(item.sessionId) })
@@ -527,7 +534,7 @@ export function apply(ctx: DshContext) {
     return { models, defaultModel: d?.provider && d?.model ? { provider: d.provider, model: d.model, ...(d.reasoningEffort ? { reasoningEffort: d.reasoningEffort } : {}) } : undefined }
   }
 
-  async function suggest({ context }: { context?: unknown }): Promise<Suggestion[]> {
+  async function suggest({ material }: { material: Material }): Promise<Suggestion[]> {
     const system = [
       '用户在屏幕上指着一块内容（网页评论、帖子、issue、代码、报错、图片等），准备交给他的 AI 助手。你替他想 2 个下一步最想让助手做的事。',
       '',
@@ -549,7 +556,7 @@ export function apply(ctx: DshContext) {
       '',
       '只输出 JSON 数组，每项 {"label": "按钮上的字，一个完整的短语，不超过 12 个字（英文名算 1 个字），宁可短也别写半句", "prompt": "实际发给助手的话，一两句"}。',
     ].join('\n')
-    const user = `用户指着的内容：\n${String(context ?? '').slice(0, 3000)}`
+    const user = `用户指着的内容：\n${composeFirst({ material }).slice(0, 3000)}`
     const signal = AbortSignal.timeout(LINE_TIMEOUT_MS)
     const call = await ctx.llm.prepareCall({ ...(route ?? DEFAULT_ROUTE), maxTokens: 600 }, signal, (controls, model) => {
       const efforts = model.reasoning?.efforts?.map(e => e.id) ?? []
@@ -590,8 +597,10 @@ export function apply(ctx: DshContext) {
     }
   }
 
-  async function ask({ askId, target, text, model, image, images, workspaceId }: Extract<PetMessage, { type: 'ask' }>) {
-    if (typeof text !== 'string' || !text.trim()) throw new Error('没有内容')
+  async function ask(msg: Extract<PetMessage, { type: 'ask' }>) {
+    const { askId, target, model, images, workspaceId } = msg
+    const text = composeAsk(msg)
+    if (!text.trim()) throw new Error('没有内容')
     const controller = ctx.get('sessionController')
     let sessionId: string = target
     if (target === 'new') {
@@ -626,7 +635,7 @@ export function apply(ctx: DshContext) {
         await controller.selectModel({ sessionId, ...request })
       }
     }
-    const content = await promptContent(text, Array.isArray(images) ? images : [image])
+    const content = await promptContent(text, Array.isArray(images) ? images : [])
     asks.set(sessionId, askId)
     if (asks.size > 20) asks.delete(asks.keys().next().value!)
     agent.followup(createUserMessage({ content, source: { kind: 'user' } }))

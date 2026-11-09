@@ -2,8 +2,6 @@ import { shell } from 'electron'
 import type { WebSocket } from 'ws'
 import { logError } from '../../core/env.ts'
 import os from '../../core/os/index.ts'
-import { composeFirst, composeFollowUp, isOurPreamble } from '../compose.ts'
-import { activityText } from './activity.ts'
 import * as host from './host.ts'
 import type { AgentDeps, AgentUi } from '../index.ts'
 import type { ConnectionHandler } from '../../server.ts'
@@ -36,17 +34,9 @@ const sendToPlugin = (msg: object) => {
   return true
 }
 
-// DSH 起正式标题前拿第一条消息开头当临时标题，那就是我们拼的内容块，不往外报
-const realTitle = (t: string | undefined) => (t && !isOurPreamble(t) ? t : undefined)
-
 const forCards = (msg: PluginMessage): msg is AgentEvent => msg.type.startsWith('ask-') || msg.type === 'sessions' || msg.type === 'suggestions' || msg.type === 'title'
 
-function onPluginMessage(raw: PluginMessage) {
-  const msg = { ...raw }
-  if ('title' in msg) msg.title = realTitle(msg.title)
-  if (msg.type === 'sessions' && Array.isArray(msg.items)) msg.items = msg.items.map(s => ({ ...s, title: realTitle(s.title) }))
-  if (msg.type === 'ask-activity') msg.text = activityText(String(msg.tool ?? ''), String(msg.detail ?? ''))
-
+function onPluginMessage(msg: PluginMessage) {
   if (msg.type === 'ready') { pluginVersion = msg.plugin; deps.onChange?.() }
   if (msg.type === 'ui') { ui = { kind: msg.kind === 'web' ? 'web' : 'desktop', origin: typeof msg.origin === 'string' ? msg.origin : undefined }; logError('dsh-ui', JSON.stringify(ui)) }
   if (msg.type === 'approval') {
@@ -79,21 +69,9 @@ export function attach(ws: WebSocket): ConnectionHandler {
   }
 }
 
-export function request(msg: CardRequest) {
-  if (msg.type === 'ask') {
-    const text = msg.followUp ? composeFollowUp(msg) : composeFirst(msg)
-    const images = Array.isArray(msg.images) ? msg.images : []
-    return sendToPlugin({
-      type: 'ask', askId: msg.askId, target: msg.target, text,
-      ...(msg.workspaceId ? { workspaceId: msg.workspaceId } : {}),
-      ...(msg.model ? { model: msg.model } : {}),
-      ...(images.length ? { image: images[0], images } : {}),
-    })
-  }
-  if (msg.type === 'suggest-request') return sendToPlugin({ type: 'suggest-request', reqId: msg.reqId, context: composeFirst({ material: msg.material }) })
-  if (msg.type === 'sessions-request' || msg.type === 'sessions-search') return sendToPlugin(msg)
-  return false
-}
+const RELAYED = new Set<unknown>(['ask', 'suggest-request', 'sessions-request', 'sessions-search'] satisfies CardRequest['type'][])
+
+export const request = (msg: CardRequest) => RELAYED.has(msg.type) && sendToPlugin(msg)
 
 export function open(sessionId?: string) {
   os.allowAnyForeground()
