@@ -33,6 +33,10 @@ const fullscreenPoll = 500 * time.Millisecond
 var windows = ui.New()
 
 func main() {
+	if out := os.Getenv("POINTY_SELFCHECK"); out != "" {
+		selfCheck(out)
+		return
+	}
 	home := config.Home()
 	logError := func(kind string, err any) { config.LogError(home, kind, err) }
 	root := resourceRoot()
