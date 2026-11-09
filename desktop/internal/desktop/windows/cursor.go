@@ -5,6 +5,7 @@ package windows
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -27,9 +28,15 @@ const (
 // shapes the cursor takes over the apps the user points in.
 var swappedCursors = []uintptr{32512, 32513, 32649, 32515}
 
+// cursorMu keeps a swap and a restore from interleaving, which could leave
+// some shapes Pointy's while the flag says none are.
+var cursorMu sync.Mutex
+
 // SwapCursor replaces the system cursors with Pointy's, in the size the
 // display under the mouse wants.
 func (d *Desktop) SwapCursor() error {
+	cursorMu.Lock()
+	defer cursorMu.Unlock()
 	scale := space().unitsPerDIP(d.Cursor())
 	file := filepath.Join(d.cursorDir, fmt.Sprintf("cursor-%d.cur", cursorSize(scale)))
 	name, err := windows.UTF16PtrFromString(file)
@@ -53,6 +60,8 @@ func (d *Desktop) SwapCursor() error {
 }
 
 func (d *Desktop) RestoreCursor() {
+	cursorMu.Lock()
+	defer cursorMu.Unlock()
 	if d.cursorSwapped.Swap(false) {
 		restoreCursors()
 	}
