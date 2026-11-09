@@ -5,4 +5,4 @@ import (
 	win "github.com/pointylab/pointy/desktop/internal/desktop/windows"
 )
 
-func newDesktop() desktop.Desktop { return win.New() }
+func newDesktop(string) desktop.Desktop { return win.New() }

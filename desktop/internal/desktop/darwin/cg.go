@@ -137,3 +137,45 @@ func (*Desktop) WindowOrigin(id desktop.WindowID) (desktop.Point, error) {
 	}
 	return desktop.Point{X: float64(list[0].bounds.X), Y: float64(list[0].bounds.Y)}, nil
 }
+
+const (
+	eventSourceCombined = 0
+	mouseLeft           = 0
+	mouseRight          = 1
+	mouseCenter         = 2
+)
+
+func (*Desktop) Cursor() desktop.Point {
+	load()
+	e := cgEventCreate(0)
+	if e == 0 {
+		return desktop.Point{}
+	}
+	defer cfRelease(e)
+	p := cgEventGetLocation(e)
+	return desktop.Point{X: p.X, Y: p.Y}
+}
+
+func (*Desktop) ButtonDown() bool {
+	load()
+	for _, b := range []uint32{mouseLeft, mouseRight, mouseCenter} {
+		if cgEventSourceButtonState(eventSourceCombined, b) {
+			return true
+		}
+	}
+	return false
+}
+
+// windowOf is the frontmost window of process pid that holds p.
+func windowOf(pid int, p desktop.Point) (cgWindow, bool) {
+	for _, w := range windowList(listOnScreenOnly|listExcludeDesktopEls, 0) {
+		if w.pid != pid || w.bounds == nil {
+			continue
+		}
+		b := w.bounds
+		if p.X >= float64(b.X) && p.Y >= float64(b.Y) && p.X < float64(b.X+b.Width) && p.Y < float64(b.Y+b.Height) {
+			return w, true
+		}
+	}
+	return cgWindow{}, false
+}
