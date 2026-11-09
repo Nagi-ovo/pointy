@@ -183,9 +183,15 @@ func (*Desktop) Foreground() (desktop.Foreground, error) {
 	}, nil
 }
 
+var selfElevated = windows.GetCurrentProcessToken().IsElevated()
+
 // ElevatedUnderCursor: Windows keeps a normal Pointy from reading an
 // administrator's window, and its mouse hook gets no clicks there.
+// An elevated Pointy reads it fine.
 func (*Desktop) ElevatedUnderCursor() bool {
+	if selfElevated {
+		return false
+	}
 	p, ok := cursorPos()
 	if !ok {
 		return false
