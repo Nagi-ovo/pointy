@@ -1,0 +1,3 @@
+Pointy lets you shake the mouse, point at anything on screen, and ask DeepSeek Harness about it. The card opens next to what you pointed at and streams the answer.
+
+A second paragraph sits here so the pick has something else to choose between.
