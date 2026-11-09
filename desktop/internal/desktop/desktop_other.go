@@ -15,8 +15,11 @@ type Unsupported struct{}
 
 var _ Desktop = Unsupported{}
 
-func (Unsupported) FullscreenActive([]WindowID) (bool, error)  { return false, errors.ErrUnsupported }
-func (Unsupported) Foreground() (Foreground, error)            { return Foreground{}, errors.ErrUnsupported }
+func (Unsupported) FullscreenActive([]WindowID) (bool, error) { return false, errors.ErrUnsupported }
+func (Unsupported) Foreground() (Foreground, error)           { return Foreground{}, errors.ErrUnsupported }
+func (Unsupported) WindowAt(int, Point) (Foreground, error) {
+	return Foreground{}, errors.ErrUnsupported
+}
 func (Unsupported) WindowID(*mygo.Window) WindowID             { return 0 }
 func (Unsupported) AttachToOwner(*mygo.Window, WindowID) error { return errors.ErrUnsupported }
 func (Unsupported) SetLevel(*mygo.Window, Level) error         { return errors.ErrUnsupported }

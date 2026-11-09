@@ -97,13 +97,18 @@ func processPath(pid int) string {
 	return string(buf[:n])
 }
 
+func process(pid int) desktop.Foreground {
+	p := desktop.Foreground{PID: pid, ExePath: processPath(pid)}
+	p.Exe = strings.ToLower(filepath.Base(p.ExePath))
+	return p
+}
+
 func (*Desktop) Foreground() (desktop.Foreground, error) {
 	pid := frontmostPID()
 	if pid == 0 {
 		return desktop.Foreground{}, nil
 	}
-	fg := desktop.Foreground{PID: pid, ExePath: processPath(pid)}
-	fg.Exe = strings.ToLower(filepath.Base(fg.ExePath))
+	fg := process(pid)
 	for _, w := range windowList(listOnScreenOnly|listExcludeDesktopEls, 0) {
 		if w.pid == pid && w.layer == 0 {
 			fg.ID, fg.Title = w.id, w.title
@@ -111,6 +116,19 @@ func (*Desktop) Foreground() (desktop.Foreground, error) {
 		}
 	}
 	return fg, nil
+}
+
+var errNoProcess = errors.New("process is gone")
+
+func (*Desktop) WindowAt(pid int, p desktop.Point) (desktop.Foreground, error) {
+	w := process(pid)
+	if pid <= 0 || w.ExePath == "" {
+		return desktop.Foreground{}, errNoProcess
+	}
+	if cw, ok := windowOf(pid, p); ok {
+		w.ID, w.Title = cw.id, cw.title
+	}
+	return w, nil
 }
 
 func (*Desktop) FullscreenActive(own []desktop.WindowID) (bool, error) {

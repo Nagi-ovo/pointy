@@ -31,7 +31,8 @@ const (
 	LevelScreenSaver
 )
 
-// Foreground is the window the user works in.
+// Foreground is the window the user works in, or another app's window
+// that WindowAt names.
 type Foreground struct {
 	ID      WindowID
 	Title   string
@@ -76,6 +77,9 @@ type Desktop interface {
 	// whole display. own lists Pointy's windows, which never count.
 	FullscreenActive(own []WindowID) (bool, error)
 	Foreground() (Foreground, error)
+	// WindowAt is the window of process pid under p, which need not be in
+	// front.
+	WindowAt(pid int, p Point) (Foreground, error)
 	// WindowID returns the system id of a Pointy window.
 	WindowID(*mygo.Window) WindowID
 	// AttachToOwner keeps a Pointy window directly above owner while owner's

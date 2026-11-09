@@ -234,9 +234,18 @@ func (p *Picker) pickControl(ctx context.Context, fg desktop.Foreground, f fallb
 	if r == nil {
 		return
 	}
+	// The control may sit in a window behind the foreground one.
+	src := fg
+	if r.window.Exe != "" {
+		src = r.window
+	}
+	if blocked(p.d.Desktop, src) {
+		r.held.Release()
+		return
+	}
 	el := r.element
 	if p.d.Settings.Get().DebugPick {
-		p.logDiag(fg, r)
+		p.logDiag(src, r)
 	}
 	text := el.Text
 	fields := map[string]string{i18n.T(i18n.FieldControl): i18n.T(i18n.Control(el.Control)), i18n.T(i18n.FieldName): firstRunes(el.Name, 120), i18n.T(i18n.FieldClass): el.ClassName}
@@ -248,9 +257,9 @@ func (p *Picker) pickControl(ctx context.Context, fg desktop.Foreground, f fallb
 		fields = map[string]string{i18n.T(i18n.FieldControl): i18n.T(i18n.FieldAppWindow)}
 	}
 	g := contract.Grab{
-		Source:    contract.GrabSource{App: fg.Exe, Title: fg.Title},
+		Source:    contract.GrabSource{App: src.Exe, Title: src.Title},
 		Method:    contract.MethodUIAPick,
-		Element:   &contract.GrabElement{Kind: "ui-element", Site: fg.Exe, Tag: el.Control, Fields: fields, Text: text},
+		Element:   &contract.GrabElement{Kind: "ui-element", Site: src.Exe, Tag: el.Control, Fields: fields, Text: text},
 		Text:      text,
 		WideImage: r.wide,
 		ShotKind:  contract.ShotElement,
