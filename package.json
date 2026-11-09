@@ -4,17 +4,23 @@
   "private": true,
   "description": "Shake the mouse, point at anything on screen and ask DeepSeek Harness about it",
   "license": "MIT",
-  "main": "app/main.js",
+  "main": "build/app/main.js",
   "scripts": {
-    "start": "electron .",
-    "fake": "node tools/fake-plugin.mjs"
+    "build": "node tools/build.ts",
+    "start": "node tools/build.ts && electron .",
+    "check": "node tools/build.ts && node --test test/",
+    "fake": "node tools/fake-plugin.ts"
   },
   "dependencies": {
     "koffi": "^2.16.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^24.19.2",
+    "@types/ws": "^8.18.2",
     "electron": "^44.0.0",
-    "resedit": "^3.1.0"
+    "resedit": "^3.1.0",
+    "typescript": "^7.0.2"
   }
 }
