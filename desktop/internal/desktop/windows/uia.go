@@ -46,6 +46,7 @@ const (
 
 	elemFindAll           = 6
 	elemGetCurrentPattern = 16
+	elemProcessID         = 20
 	elemControlType       = 21
 	elemName              = 23
 	elemClassName         = 30
@@ -189,6 +190,7 @@ func (u *uia) describe(e *com) control {
 		class:    e.bstr(elemClassName),
 		rect:     rectOf(r.Left, r.Top, r.Right, r.Bottom),
 		password: e.int32At(elemIsPassword) != 0,
+		pid:      int(e.int32At(elemProcessID)),
 	}
 }
 

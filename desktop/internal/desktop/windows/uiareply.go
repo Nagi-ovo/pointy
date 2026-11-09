@@ -29,6 +29,7 @@ type control struct {
 	class    string
 	rect     *desktop.Rect
 	password bool
+	pid      int
 }
 
 // controlTypes are UIA's control type ids from 50000 (UIA_ButtonControlTypeId)
@@ -164,6 +165,7 @@ func elementReply(c control, kids, readable bool, win *desktop.Rect, text, value
 		Readable:  readable,
 		Win:       win,
 		Text:      clip(strings.TrimSpace(text), maxText),
+		PID:       c.pid,
 	}
 	if c.typeID == typeHyperlink && webURL.MatchString(value) {
 		r.Href = value

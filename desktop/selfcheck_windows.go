@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"hash/fnv"
+	"image"
 	"strings"
 	"syscall"
 	"unsafe"
 
 	"github.com/egoist/mygo"
 	"github.com/pointylab/pointy/desktop/internal/desktop"
+	win "github.com/pointylab/pointy/desktop/internal/desktop/windows"
 	win32 "golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -189,6 +191,10 @@ func moveTo(p desktop.Point) error {
 	}
 	return nil
 }
+
+func (winDriver) move(p desktop.Point) error { return moveTo(p) }
+
+func (winDriver) screen(r desktop.Rect) (image.Image, error) { return win.CaptureScreen(r) }
 
 func (winDriver) click(p desktop.Point, right bool) error {
 	if err := moveTo(p); err != nil {

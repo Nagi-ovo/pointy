@@ -42,6 +42,9 @@ type selfDriver interface {
 	click(p desktop.Point, right bool) error
 	wheel(p desktop.Point, delta int) error
 	cursorFingerprint() string
+	move(desktop.Point) error
+	// screen copies r from the screen, Pointy's windows included.
+	screen(desktop.Rect) (image.Image, error)
 }
 
 type report struct {
@@ -106,7 +109,7 @@ func selfCheck(out string) {
 				time.Sleep(time.Duration(wait) * time.Second)
 			}
 			r := &report{dir: filepath.Dir(out)}
-			runChecks(r, newDesktop(), newSelfDriver())
+			runChecks(r, newDesktop(resourceRoot()), newSelfDriver())
 			text := strings.Join(r.lines, "\n") + fmt.Sprintf("\n\n%d failed\n", r.fails)
 			if err := os.WriteFile(out, []byte(text), 0o644); err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -163,7 +166,7 @@ func runChecks(r *report, d desktop.Desktop, drv selfDriver) {
 	checkWindow(r, d, drv, fg, target)
 	checkA11y(r, d, drv, fg, target)
 
-	if img, err := d.Capture(target); r.check("Capture", err == nil && img != nil && img.Bounds().Dx() == target[2], "%v of %v, %v", sizeOf(img), target, errText(err)) {
+	if img, _, err := within(3*time.Second, func(ctx context.Context) (image.Image, error) { return d.Capture(ctx, target, fg.PID) }); r.check("Capture", err == nil && img != nil && img.Bounds().Dx() == target[2], "%v of %v, %v", sizeOf(img), target, errText(err)) {
 		r.savePNG("capture-target.png", img)
 		r.check("Capture shows something", !uniform(img), "not one flat color")
 	}
@@ -248,6 +251,7 @@ func checkWindow(r *report, d desktop.Desktop, drv selfDriver, fg desktop.Foregr
 	defer w.Destroy()
 	r.noErr("PrepareWindow", d.PrepareWindow(w))
 	r.noErr("SetLevel screen saver", d.SetLevel(w, desktop.LevelScreenSaver))
+	mygo.RunOnMain(func() { w.SetBounds(b) })
 	r.noErr("SetFocusable false", d.SetFocusable(w, false))
 	id := d.WindowID(w)
 	r.check("WindowID", id != 0, "%#x", uint64(id))
@@ -258,37 +262,14 @@ func checkWindow(r *report, d desktop.Desktop, drv selfDriver, fg desktop.Foregr
 		r.info("OnReadyToShow", "did not fire within 5s; showing anyway")
 	}
 
-	px := d.ToScreen(desktop.Point{X: float64(b.X), Y: float64(b.Y)})
-	scale := d.UnitsPerDIP(px)
-	area := desktop.Rect{int(px.X), int(px.Y), int(float64(b.Width) * scale), int(float64(b.Height) * scale)}
-	before, err := d.Capture(area)
-	if !r.noErr("Capture before showing", err) {
-		return
-	}
 	mygo.RunOnMain(w.ShowInactive)
 	time.Sleep(1500 * time.Millisecond)
-	if drv != nil {
-		r.info("window style", "%s", drv.style(w))
-	}
 	now, err := d.Foreground()
 	r.check("showing took no focus", err == nil && now.ID == fg.ID, "foreground %#x, was %#x", uint64(now.ID), uint64(fg.ID))
-	shown, err := d.Capture(area)
-	if r.noErr("Capture after showing", err) {
-		r.savePNG("window-before.png", before)
-		r.savePNG("window-shown.png", shown)
-		corners := cornerDiff(before, shown, int(8*scale))
-		r.check("transparent corners show what is behind", corners < 24, "largest corner difference %d", corners)
-		mid := shown.At(shown.Bounds().Dx()/2, shown.Bounds().Dy()/2)
-		r.check("the page paints", near(mid, testBlue, 24), "center %v, want %v", mid, testBlue)
-	}
-
-	mygo.RunOnMain(func() { w.SetIgnoreMouseEvents(true) })
-	time.Sleep(500 * time.Millisecond)
-	if through, err := d.Capture(area); r.noErr("Capture click-through", err) {
-		r.savePNG("window-clickthrough.png", through)
-		r.check("click-through window keeps transparent corners", cornerDiff(before, through, int(8*scale)) < 24, "largest corner difference %d", cornerDiff(before, through, int(8*scale)))
-	}
-	if drv != nil {
+	if drv == nil {
+		r.skip("window pixels", "no driver reads the screen on this platform")
+	} else {
+		area := checkWindowPixels(r, d, drv, w, fg, b)
 		mid := desktop.Point{X: float64(area[0] + area[2]/2), Y: float64(area[1] + area[3]/2)}
 		at := drv.windowAt(mid)
 		r.check("clicks pass through", at != id && at != 0, "window at the center %#x, ours %#x", uint64(at), uint64(id))
@@ -303,6 +284,41 @@ func checkWindow(r *report, d desktop.Desktop, drv selfDriver, fg desktop.Foregr
 		o, err := d.WindowOrigin(fg.ID)
 		r.check("WindowOrigin", err == nil && int(o.X) == target[0] && int(o.Y) == target[1], "%+v %v", o, errText(err))
 	}
+}
+
+// checkWindowPixels reads the shown test window off the screen: its page
+// paints, its corners show what is behind, and Capture leaves it out. It
+// returns the window's area in screen units.
+func checkWindowPixels(r *report, d desktop.Desktop, drv selfDriver, w *mygo.Window, fg desktop.Foreground, b mygo.Rectangle) desktop.Rect {
+	r.info("window style", "%s", drv.style(w))
+	px := d.ToScreen(desktop.Point{X: float64(b.X), Y: float64(b.Y)})
+	scale := d.UnitsPerDIP(px)
+	area := desktop.Rect{int(px.X), int(px.Y), int(float64(b.Width) * scale), int(float64(b.Height) * scale)}
+	behind, _, err := within(3*time.Second, func(ctx context.Context) (image.Image, error) { return d.Capture(ctx, area, fg.PID) })
+	if !r.noErr("Capture over a Pointy window", err) {
+		return area
+	}
+	r.savePNG("window-captured.png", behind)
+	mid := behind.At(behind.Bounds().Dx()/2, behind.Bounds().Dy()/2)
+	r.check("Capture leaves Pointy's windows out", !near(mid, testBlue, 24), "center %v, the window paints %v", mid, testBlue)
+	time.Sleep(200 * time.Millisecond)
+	shown, err := drv.screen(area)
+	if !r.noErr("screen with the window shown", err) {
+		return area
+	}
+	r.savePNG("window-shown.png", shown)
+	corners := cornerDiff(behind, shown, int(8*scale))
+	r.check("transparent corners show what is behind", corners < 24, "largest corner difference %d", corners)
+	mid = shown.At(shown.Bounds().Dx()/2, shown.Bounds().Dy()/2)
+	r.check("the page paints, and Capture showed it to recorders again", near(mid, testBlue, 24), "center %v, want %v", mid, testBlue)
+
+	mygo.RunOnMain(func() { w.SetIgnoreMouseEvents(true) })
+	time.Sleep(500 * time.Millisecond)
+	if through, err := drv.screen(area); r.noErr("screen click-through", err) {
+		r.savePNG("window-clickthrough.png", through)
+		r.check("click-through window keeps transparent corners", cornerDiff(behind, through, int(8*scale)) < 24, "largest corner difference %d", cornerDiff(behind, through, int(8*scale)))
+	}
+	return area
 }
 
 func checkA11y(r *report, d desktop.Desktop, drv selfDriver, fg desktop.Foreground, target desktop.Rect) {
