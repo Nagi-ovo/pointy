@@ -9,16 +9,45 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
+	"github.com/ebitengine/purego/objc"
 	"github.com/pointylab/pointy/desktop/internal/desktop"
 )
 
+var _ desktop.Desktop = (*Desktop)(nil)
+
+// Desktop answers ToDIP, ToScreen, RectToDIP and UnitsPerDIP as
+// desktop.Unsupported does, since macOS screen units are points, as
+// mygo's are.
 type Desktop struct {
 	desktop.Unsupported
+	assets string
 }
 
-func New() *Desktop { return &Desktop{} }
+// New takes the directory holding Pointy's cursor images.
+func New(assets string) *Desktop { return &Desktop{assets: assets} }
+
+var accessPrompted atomic.Bool
+
+// AccessHint shows the system's Accessibility prompt the first time it
+// finds the grant missing.
+func (*Desktop) AccessHint() string {
+	load()
+	trusted := false
+	withPool(func() {
+		prompt := !accessPrompted.Load()
+		value := class("NSNumber").Send(sel("numberWithBool:"), prompt)
+		options := class("NSDictionary").Send(sel("dictionaryWithObject:forKey:"), value, objc.ID(kAXTrustedCheckOptionPrompt))
+		trusted = axIsProcessTrustedWithOptions(uintptr(options))
+	})
+	if trusted {
+		return ""
+	}
+	accessPrompted.Store(true)
+	return "要先允许 Pointy 使用辅助功能：系统设置 → 隐私与安全性 → 辅助功能"
+}
 
 // AllowAnyForeground does nothing: an app Pointy opens comes forward on
 // its own.
