@@ -1,13 +1,13 @@
 // 主进程给整份列表，这里照着画；点胶囊放回卡片，× 不看了
-const list = document.getElementById('list')
-const rows = new Map() // id -> element
+const list = document.getElementById('list')!
+const rows = new Map<string, HTMLElement>()
 
-function row(p) {
+function row(p: PillItem) {
   const el = document.createElement('div')
   el.dataset.id = p.id
   el.innerHTML = '<img src="../card/mascot/idle.png" alt=""><span class="dot"></span><span class="title"></span><button class="x" type="button" title="不看了">×</button>'
   el.addEventListener('click', () => window.pill.open(p.id))
-  el.querySelector('.x').addEventListener('click', (e) => { e.stopPropagation(); window.pill.dismiss(p.id) })
+  el.querySelector('.x')!.addEventListener('click', (e) => { e.stopPropagation(); window.pill.dismiss(p.id) })
   return el
 }
 
@@ -28,8 +28,10 @@ window.pill.onList((items) => {
     let el = rows.get(p.id)
     if (!el) { el = row(p); rows.set(p.id, el); list.append(el) }
     el.className = `pill ${p.state}`
-    el.querySelector('.title').textContent = p.title
+    el.querySelector('.title')!.textContent = p.title
     el.title = { run: '在后台做：', done: '做完了：', error: '出错了：' }[p.state] + p.title + '\n点一下放回卡片'
   }
   fit()
 })
+
+export {}

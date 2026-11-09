@@ -1,22 +1,31 @@
 // 卡片以外的小窗：右下角提示窗（首次引导、扩展配对、装扩展的步骤）、屏幕下方一句话提示、开场动画
-const { BrowserWindow, clipboard, ipcMain, screen } = require('electron')
-const path = require('node:path')
-const { APP_DIR, TEST_HIDDEN, settings, saveSettings, installedVersion } = require('../core/env')
-const { isFullscreen } = require('../core/state')
+import { BrowserWindow, clipboard, ipcMain, screen } from 'electron'
+import type { IpcMainEvent } from 'electron'
+import path from 'node:path'
+import { APP_DIR, TEST_HIDDEN, settings, saveSettings, installedVersion } from '../core/env.ts'
+import { isFullscreen } from '../core/state.ts'
 
-let deps = {} // { agentName(), extensionDir(), syncExtension() }
-const init = (d) => { deps = d }
+export interface NoticeDeps {
+  agentName(): string
+  extensionDir(): string
+  syncExtension(): void
+}
+// init() 之前是空的
+let deps = {} as NoticeDeps
+export const init = (d: NoticeDeps) => { deps = d }
 
 // ---------- 右下角提示窗 ----------
-let noticeWin
-let noticeDone // 当前提示窗的回调：点了按钮 / 关掉 / 超时 / 被新的顶掉都走这里
+/** 用户点的按钮 id；关掉或超时是 null */
+type NoticeChoice = string | null
+let noticeWin: BrowserWindow | undefined
+let noticeDone: ((choice: NoticeChoice) => void) | undefined // 当前提示窗的回调：点了按钮 / 关掉 / 超时 / 被新的顶掉都走这里
 const NOTICE_W = 380
 
 /** 右下角弹一个小窗，返回用户点的按钮 id；关掉或超时是 null。返回的 Promise 带 cancel()，只关这一个 */
-function showNotice({ title, body, buttons, timeoutMs }) {
+export function showNotice({ title, body, buttons, timeoutMs }: NoticeInit & { timeoutMs?: number }) {
   noticeDone?.(null)
-  let cancel
-  const asked = new Promise((resolve) => {
+  let cancel: (() => void) | undefined
+  const asked: Promise<NoticeChoice> & { cancel?: () => void } = new Promise((resolve) => {
     const { workArea } = screen.getPrimaryDisplay()
     const w = new BrowserWindow({
       width: NOTICE_W, height: 200, x: workArea.x + workArea.width - NOTICE_W - 12, y: workArea.y + workArea.height - 212,
@@ -26,8 +35,8 @@ function showNotice({ title, body, buttons, timeoutMs }) {
     })
     w.setAlwaysOnTop(true, 'floating')
     noticeWin = w
-    let timer
-    const done = (choice) => {
+    let timer: NodeJS.Timeout | undefined
+    const done = (choice: NoticeChoice) => {
       if (noticeDone !== done) return
       noticeDone = undefined
       clearTimeout(timer)
@@ -40,14 +49,14 @@ function showNotice({ title, body, buttons, timeoutMs }) {
     if (timeoutMs) timer = setTimeout(() => done(null), timeoutMs)
     w.on('closed', () => done(null))
     w.loadFile(path.join(APP_DIR, 'notice', 'notice.html'))
-    w.webContents.once('did-finish-load', () => w.webContents.send('notice-init', { title, body, buttons }))
+    w.webContents.once('did-finish-load', () => w.webContents.send('notice-init', { title, body, buttons } satisfies NoticeInit))
   })
   asked.cancel = cancel
   return asked
 }
 ipcMain.on('notice-copy', (e, text) => { if (noticeWin && e.sender === noticeWin.webContents) clipboard.writeText(String(text ?? '')) })
 ipcMain.on('notice-choose', (e, id) => { if (noticeWin && e.sender === noticeWin.webContents) noticeDone?.(typeof id === 'string' ? id : null) })
-ipcMain.on('notice-resize', (e, height) => {
+ipcMain.on('notice-resize', (e, height: number) => {
   const w = noticeWin
   if (!w || e.sender !== w.webContents || !Number.isFinite(height)) return
   const h = Math.min(Math.max(Math.round(height), 80), 600)
@@ -57,14 +66,14 @@ ipcMain.on('notice-resize', (e, height) => {
 })
 
 /** 关掉当前提示窗（choice 当作用户点的）；没有提示窗时什么也不做 */
-const closeNotice = (choice = null) => noticeDone?.(choice)
-const noticeOpen = () => !!noticeWin
+export const closeNotice = (choice: NoticeChoice = null) => noticeDone?.(choice)
+export const noticeOpen = () => !!noticeWin
 
 // ---------- 屏幕正下方一句话 ----------
 // 样子同指认时的操作提示，几秒后自己消失
-let hintWin
-let hintTimer
-function showHint(text) {
+let hintWin: BrowserWindow | undefined
+let hintTimer: NodeJS.Timeout | undefined
+export function showHint(text: string) {
   if (TEST_HIDDEN) return
   const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const width = 520
@@ -78,7 +87,7 @@ function showHint(text) {
     hintWin.setAlwaysOnTop(true, 'screen-saver')
   }
   hintWin.setBounds({ x: Math.round(workArea.x + (workArea.width - width) / 2), y: workArea.y + workArea.height - height - 40, width, height })
-  const esc = (s) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+  const esc = (s: string) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } as Record<string, string>)[c])
   const html = `<!doctype html><meta charset="utf-8"><body style="margin:0;background:transparent;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden">
     <div style="padding:10px 22px;border-radius:999px;background:rgba(28,32,51,.92);color:#fff;font:16px 'Segoe UI','Microsoft YaHei UI',sans-serif;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.18)">${esc(text)}</div></body>`
   hintWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).then(() => hintWin?.showInactive()).catch(() => {})
@@ -92,7 +101,7 @@ function showHint(text) {
  * 地址和文件夹路径点了就复制，卡片不关；用户去浏览器操作时它一直留在右下角，
  * 扩展装好连上来时，配对的弹窗会顶掉它
  */
-async function showExtensionGuide() {
+export async function showExtensionGuide() {
   deps.syncExtension?.()
   const dir = deps.extensionDir?.()
   await showNotice({
@@ -111,8 +120,8 @@ async function showExtensionGuide() {
  * 屏幕正中的开场动画（app/intro/）：鲸鱼光标晃几下，指认光环套住"晃一下鼠标，指哪问哪"。
  * 全屏透明、点击穿透、不抢焦点，放完自己关。返回放完的 Promise。
  */
-function showIntro(version) {
-  return new Promise((resolve) => {
+export function showIntro(version: string) {
+  return new Promise<void>((resolve) => {
     const { bounds } = screen.getPrimaryDisplay()
     const w = new BrowserWindow({
       ...bounds, show: false, frame: false, transparent: true, resizable: false, focusable: false, skipTaskbar: true,
@@ -129,20 +138,20 @@ function showIntro(version) {
       if (!w.isDestroyed()) w.close()
       resolve()
     }
-    const onDone = (e) => { if (!w.isDestroyed() && e.sender === w.webContents) finish() }
+    const onDone = (e: IpcMainEvent) => { if (!w.isDestroyed() && e.sender === w.webContents) finish() }
     ipcMain.on('intro-done', onDone)
     w.on('closed', finish)
     setTimeout(finish, 8000)
     w.loadFile(path.join(APP_DIR, 'intro', 'intro.html'))
     w.webContents.once('did-finish-load', () => {
-      w.webContents.send('intro-init', { version })
+      w.webContents.send('intro-init', { version } satisfies IntroInit)
       if (TEST_HIDDEN) { w.setPosition(-20000, -20000); w.showInactive() } else w.showInactive()
     })
   })
 }
 
 /** 装好（第一次）或换了版本后第一次启动：放开场动画；第一次装接着弹完整说明。全屏、勿扰时不放 */
-async function greetOnStart() {
+export async function greetOnStart() {
   const version = installedVersion()
   if (settings.welcomed && settings.welcomedVersion === version) return
   if (isFullscreen() || settings.dnd) return
@@ -153,7 +162,7 @@ async function greetOnStart() {
 }
 
 /** 第一次运行：告诉用户怎么用，顺便推荐装扩展 */
-async function showWelcome() {
+export async function showWelcome() {
   saveSettings({ welcomed: true, welcomedVersion: installedVersion() })
   const choice = await showNotice({
     title: 'Pointy 已就位',
@@ -166,5 +175,3 @@ async function showWelcome() {
   })
   if (choice === 'ext') showExtensionGuide()
 }
-
-module.exports = { init, showNotice, closeNotice, noticeOpen, showHint, showExtensionGuide, showIntro, greetOnStart, showWelcome }

@@ -1,13 +1,23 @@
 // 托盘：图标、悬停提示、菜单、气泡通知
-const { app, Menu, Notification, Tray, nativeImage } = require('electron')
-const { TRAY_ICON, settings, saveSettings, logError } = require('../core/env')
-const { suppressed, visibilityChanged } = require('../core/state')
+import { app, Menu, Notification, Tray, nativeImage } from 'electron'
+import type { MenuItemConstructorOptions } from 'electron'
+import { TRAY_ICON, settings, saveSettings, logError } from '../core/env.ts'
+import { suppressed, visibilityChanged } from '../core/state.ts'
+import type { Agent } from '../agents/index.ts'
 
-let tray
-let notifyClick
-let deps = {} // { agent(), extensionCount(), showExtensionGuide(), showWelcome() }
+export interface TrayDeps {
+  agent(): Agent
+  extensionCount(): number
+  showExtensionGuide(): void
+  showWelcome(): void
+}
 
-function update() {
+let tray: Tray | undefined
+let notifyClick: (() => void) | undefined
+// create() 之前是空的
+let deps = {} as TrayDeps
+
+export function update() {
   if (!tray) return
   const agent = deps.agent()
   const { connected, pendingApprovals } = agent.status()
@@ -24,7 +34,7 @@ function update() {
       label: '晃一下鼠标指认',
       submenu: [
         { label: '关', type: 'radio', checked: !settings.shake, click: () => { saveSettings({ shake: false }); update() } },
-        ...[['low', '低：要晃得明显'], ['medium', '中'], ['high', '高：轻晃就行']].map(([value, label]) => ({
+        ...([['low', '低：要晃得明显'], ['medium', '中'], ['high', '高：轻晃就行']] as const).map(([value, label]): MenuItemConstructorOptions => ({
           label, type: 'radio', checked: settings.shake && settings.shakeLevel === value, click: () => { saveSettings({ shake: true, shakeLevel: value }); update() },
         })),
       ],
@@ -41,7 +51,7 @@ function update() {
 }
 
 /** 托盘气泡通知（收起的任务做完、agent 要批准都靠它） */
-function notify(title, content, onClick) {
+export function notify(title: string, content: string, onClick?: () => void) {
   if (!tray || suppressed()) return
   if (process.platform === 'darwin') {
     // macOS 没有托盘气泡，走系统通知
@@ -63,11 +73,9 @@ function trayImage() {
   return img
 }
 
-function create(d) {
+export function create(d: TrayDeps) {
   deps = d
   tray = new Tray(trayImage())
   tray.on('balloon-click', () => { const f = notifyClick; notifyClick = undefined; f?.() })
   update()
 }
-
-module.exports = { create, update, notify }

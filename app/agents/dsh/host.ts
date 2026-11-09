@@ -1,10 +1,10 @@
 // Pointy 作为 DSH 插件跑时，跟 DSH 这个宿主有关的生命周期：
 // 由插件拉起（POINTY_MANAGED=1）、DSH 关了跟着退、插件被卸载后清理自己、清掉旧版留下的启动方式
-const { app } = require('electron')
-const fs = require('node:fs')
-const path = require('node:path')
-const { HOME_DIR, ROOT_DIR, TEST_HIDDEN, logError } = require('../../core/env')
-const { removeAfterExit } = require('../../core/os')
+import { app } from 'electron'
+import fs from 'node:fs'
+import path from 'node:path'
+import { HOME_DIR, ROOT_DIR, TEST_HIDDEN, logError } from '../../core/env.ts'
+import os from '../../core/os/index.ts'
 
 // 由 DSH 插件拉起（插件形态）：DSH 关了 Pointy 也跟着退
 const MANAGED = process.env.POINTY_MANAGED === '1'
@@ -15,7 +15,7 @@ const LAUNCH_FILE = path.join(HOME_DIR, 'launch.json')
 // 插件形态下 Pointy 从插件包里的 pet/ 运行：app/ 的上两级是插件包根目录
 const PLUGIN_ROOT = path.resolve(ROOT_DIR, '..')
 
-let quitTimer
+let quitTimer: NodeJS.Timeout | undefined
 let isConnected = () => false
 
 /** 旧版留下的：开机自启项和 launch.json。现在只由 DSH 插件拉起，这两样清掉 */
@@ -35,22 +35,22 @@ function quitIfOrphaned() {
   const host = Number(process.env.POINTY_HOST_PID)
   if (isConnected() || !Number.isInteger(host) || host <= 0) return
   try { process.kill(host, 0) } catch (err) {
-    if (err.code === 'ESRCH') { logError('orphan', `DSH host ${host} is gone and no plugin is connected; quitting`); app.quit() }
+    if ((err as NodeJS.ErrnoException).code === 'ESRCH') { logError('orphan', `DSH host ${host} is gone and no plugin is connected; quitting`); app.quit() }
   }
 }
 
 /** 启动时调一次。connected：插件现在连着没有 */
-function start(connected) {
+export function start(connected: () => boolean) {
   isConnected = connected
   if (!TEST_HIDDEN) dropOldAutostart()
   if (MANAGED) setInterval(quitIfOrphaned, 5000)
 }
 
-function linked() {
+export function linked() {
   clearTimeout(quitTimer)
 }
 
-function unlinked(everConnected) {
+export function unlinked(everConnected: boolean) {
   clearTimeout(quitTimer)
   if (everConnected && MANAGED) quitTimer = setTimeout(() => { if (!isConnected()) app.quit() }, QUIT_GRACE_MS)
 }
@@ -68,12 +68,10 @@ function pluginUninstalled() {
 function cleanUpAfterUninstall() {
   const targets = [HOME_DIR, app.getPath('userData'), PLUGIN_ROOT].filter((p) => fs.existsSync(p))
   logError('uninstall', `plugin removed; cleaning ${targets.join(', ')}`)
-  try { removeAfterExit(targets) } catch (err) { logError('uninstall', err) }
+  try { os.removeAfterExit(targets) } catch (err) { logError('uninstall', err) }
 }
 
 /** 退出时调：插件已经被卸载了就清理 */
-function willQuit() {
+export function willQuit() {
   if (MANAGED && (!TEST_HIDDEN || process.env.POINTY_TEST_UNINSTALL === '1') && pluginUninstalled()) cleanUpAfterUninstall()
 }
-
-module.exports = { start, linked, unlinked, willQuit }

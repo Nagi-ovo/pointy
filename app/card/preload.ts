@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('card', {
   onInit: (fn) => ipcRenderer.on('card-init', (_e, data) => fn(data)),
@@ -20,4 +20,4 @@ contextBridge.exposeInMainWorld('card', {
   gripMove: () => ipcRenderer.send('card-grip-move'),
   gripEnd: () => ipcRenderer.send('card-grip-end'),
   asked: () => ipcRenderer.send('card-asked'),
-})
+} satisfies CardApi)

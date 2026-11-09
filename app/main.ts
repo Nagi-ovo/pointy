@@ -5,18 +5,18 @@
 //   browser/    浏览器扩展：配对、网页里的指认、切标签页
 //   server.js   本机 WebSocket 服务，agent 桥和扩展都连这里
 //   ui/tray、ui/notices  托盘、提示窗、开场动画
-const { app, globalShortcut } = require('electron')
-const { PORT, TEST_HIDDEN, logError } = require('./core/env')
-const state = require('./core/state')
-const { isFullscreenActive, restoreCursor } = require('./core/os')
-const selection = require('./pick/selection')
-const pick = require('./pick')
-const extensions = require('./browser/extensions')
-const agents = require('./agents')
-const cards = require('./ui/cards')
-const notices = require('./ui/notices')
-const tray = require('./ui/tray')
-const { startServer } = require('./server')
+import { app, globalShortcut } from 'electron'
+import { PORT, TEST_HIDDEN, logError } from './core/env.ts'
+import * as state from './core/state.ts'
+import os from './core/os/index.ts'
+import * as selection from './pick/selection.ts'
+import * as pick from './pick/index.ts'
+import * as extensions from './browser/extensions.ts'
+import * as agents from './agents/index.ts'
+import * as cards from './ui/cards.ts'
+import * as notices from './ui/notices.ts'
+import * as tray from './ui/tray.ts'
+import { startServer } from './server.ts'
 
 process.on('uncaughtException', (err) => logError('uncaught', err))
 process.on('unhandledRejection', (err) => logError('unhandled-rejection', err))
@@ -24,14 +24,19 @@ process.on('unhandledRejection', (err) => logError('unhandled-rejection', err))
 app.on('web-contents-created', (_e, wc) => {
   wc.on('console-message', (e) => { if (e.level === 'error') logError('renderer', `${e.message} (${e.sourceId}:${e.lineNumber})`) })
   wc.on('render-process-gone', (_e, details) => logError('render-process-gone', JSON.stringify(details)))
-  wc.on('preload-error', (_e, preloadPath, err) => logError('preload', `${preloadPath}: ${err?.stack ?? err}`))
+  wc.on('preload-error', (_e, preloadPath, err) => logError('preload', `${preloadPath}: ${(err as Error | undefined)?.stack ?? err}`))
 })
+
+/** 测试钩子：POINTY_TEST_HIDDEN / POINTY_TEST_HOOKS 时挂在 global 上，经 --inspect 调用 */
+declare global {
+  var pointyTest: (Record<string, unknown> & { allowPairAsk?: boolean }) | undefined
+}
 
 const FULLSCREEN_POLL_MS = 500
 
 function pollFullscreen() {
   let now = false
-  try { now = isFullscreenActive(cards.ownHandles()) } catch {}
+  try { now = os.isFullscreenActive(cards.ownHandles()) } catch {}
   state.setFullscreen(now)
 }
 
@@ -43,7 +48,7 @@ app.whenReady().then(() => {
   // 只在菜单栏放图标，不占程序坞
   app.dock?.hide()
   // 上次指认中途崩溃的话系统光标还是鲸鱼娘，启动时先恢复成用户自己的
-  if (!TEST_HIDDEN) restoreCursor(true)
+  if (!TEST_HIDDEN) os.restoreCursor(true)
   if (!TEST_HIDDEN) extensions.syncUserExtension()
 
   const agent = agents.current()
@@ -76,7 +81,7 @@ app.whenReady().then(() => {
   if (TEST_HIDDEN || process.env.POINTY_TEST_HOOKS === '1') {
     global.pointyTest = {
       openCard: cards.openCard,
-      openAgent: (sessionId) => agents.current().open(sessionId),
+      openAgent: (sessionId?: string) => agents.current().open(sessionId),
       agentUi: () => agents.current().ui?.(),
       getCard: cards.current,
       allCards: cards.all,
@@ -84,7 +89,7 @@ app.whenReady().then(() => {
       pills: cards.pills,
       pillBounds: cards.pillBounds,
       showNotice: notices.showNotice,
-      noticeChoose: (id) => notices.closeNotice(id),
+      noticeChoose: (id: string | null) => notices.closeNotice(id),
       noticeOpen: notices.noticeOpen,
       showWelcome: notices.showWelcome,
       greetOnStart: notices.greetOnStart,
@@ -103,7 +108,7 @@ app.whenReady().then(() => {
 })
 app.on('window-all-closed', () => {})
 app.on('will-quit', () => {
-  restoreCursor()
+  os.restoreCursor()
   globalShortcut.unregisterAll()
   selection.stopSelectionHelper()
   agents.current().willQuit()

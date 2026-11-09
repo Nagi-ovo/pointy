@@ -1,11 +1,9 @@
 // 把卡片交来的"指到的东西 + 问题 + 回答档位"拼成发给 agent 的一段话。
 // 这套格式不绑哪家 agent，新接的 agent 可以直接用，也可以自己另写
 //
-// material（卡片整理好的，已经去过噪音）：
-//   { site, kind, ctx: [{ label, text }], images: [{ alt, src }], links: [{ text, href }], selection,
-//     shots: { image: bool, wide: bool, kind: 'focus' | 'element' } }
+// material：卡片整理好的，已经去过噪音（见 types.d.ts 的 Material）
 
-const KIND_LABEL = {
+const KIND_LABEL: Record<string, string> = {
   comment: '评论', 'issue-body': 'Issue', 'ui-element': '界面元素', 'video-card': '视频', 'code-line': '代码', image: '图片', video: '视频', code: '代码',
   'table-row': '表格行', heading: '标题', link: '链接', paragraph: '段落', block: '内容块', selection: '选区',
 }
@@ -22,15 +20,15 @@ const MATERIAL_OPEN = '<抓取内容>'
 const MATERIAL_CLOSE = '</抓取内容>'
 
 /** 消息开头是不是我们拼的东西（有的 agent 起正式标题前拿第一条消息开头当临时标题） */
-const isOurPreamble = (text) => {
+export const isOurPreamble = (text: unknown) => {
   const t = String(text ?? '').trim()
   return t.startsWith(MATERIAL_OPEN) || t.startsWith('回答要求：')
 }
 
-function materialLines(m) {
+function materialLines(m: Material | undefined) {
   if (!m) return []
-  const lines = []
-  if (m.site) lines.push(`来源：${m.site}（${KIND_LABEL[m.kind] ?? '元素'}）`)
+  const lines: string[] = []
+  if (m.site) lines.push(`来源：${m.site}（${KIND_LABEL[String(m.kind)] ?? '元素'}）`)
   for (const item of m.ctx ?? []) lines.push(`${item.label}：${item.text}`)
   const images = m.images ?? []
   if (images.length) lines.push(`图片：\n${images.map(i => `- ${i.alt} ${i.src}`).join('\n')}`)
@@ -38,7 +36,7 @@ function materialLines(m) {
   if (links.length === 1) lines.push(`链接：${links[0].href}`)
   else if (links.length) lines.push(`链接：\n${links.map(l => `- ${l.text} ${l.href}`).join('\n')}`)
   if (m.selection) lines.push(['内容：', ...m.selection.split('\n').map(l => `> ${l}`)].join('\n'))
-  const shots = m.shots ?? {}
+  const shots: Partial<Material['shots']> = m.shots ?? {}
   if (shots.image && shots.wide) lines.push(shots.kind === 'focus' ? '附图：两张截图，第一张是鼠标附近那块（用户关心的部分），第二张是整个区域，见图片。' : '附图：两张截图，第一张是指到的那块，第二张是整个窗口（看周围还有什么），见图片。')
   else if (shots.image) lines.push('附图：指到的那块的截图，见图片。')
   else if (shots.wide) lines.push('附图：整个窗口的截图，指到的是上面"内容"里那块，见图片。')
@@ -49,7 +47,7 @@ function materialLines(m) {
  * 第一问：抓到的内容包在 <抓取内容> 里，用户的问题单独放最后。
  * 快答加上快答要求，完整加上「做完先给一句结论」；question 为空时（拿去要建议问题）只有内容块
  */
-function composeFirst({ material, question = '', mode }) {
+export function composeFirst({ material, question = '', mode }: { material?: Material; question?: string; mode?: AnswerMode }) {
   const lines = materialLines(material)
   const note = mode === 'quick' ? QUICK_ANSWER : question ? FULL_NOTE : ''
   if (!lines.length) return [note, question].filter(Boolean).join('\n\n')
@@ -63,9 +61,7 @@ function composeFirst({ material, question = '', mode }) {
 }
 
 /** 追问：只发打的字；档位和上一条不一样时补一句对应的要求 */
-function composeFollowUp({ question, mode, modeChanged }) {
+export function composeFollowUp({ question, mode, modeChanged }: { question: string; mode: AnswerMode; modeChanged: boolean }) {
   const switched = modeChanged ? (mode === 'quick' ? QUICK_ANSWER : FULL_ANSWER) : ''
   return [switched, question].filter(Boolean).join('\n\n')
 }
-
-module.exports = { composeFirst, composeFollowUp, isOurPreamble }
