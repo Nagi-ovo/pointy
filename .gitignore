@@ -12,5 +12,3 @@ plugin/ASSETS.md
 build/
 plugin/build/
 desktop/bin/
-# the plugin project type-checks the generated client and emits it beside its source
-app/bridge/mygo.js

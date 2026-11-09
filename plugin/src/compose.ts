@@ -1,4 +1,4 @@
-/// <reference path="../../app/types.d.ts" />
+/// <reference path="../../app/protocol.d.ts" />
 
 const KIND_LABEL: Record<string, string> = {
   comment: '评论', 'issue-body': 'Issue', 'ui-element': '界面元素', 'video-card': '视频', 'code-line': '代码', image: '图片', video: '视频', code: '代码',
