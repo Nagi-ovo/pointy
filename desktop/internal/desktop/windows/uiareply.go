@@ -82,11 +82,11 @@ func smallestAt(rects []*desktop.Rect, x, y float64) int {
 	return best
 }
 
-var space = regexp.MustCompile(`\s+`)
+var whitespace = regexp.MustCompile(`\s+`)
 
 // oneLine collapses whitespace and keeps the first n characters.
 func oneLine(s string, n int) string {
-	return clip(space.ReplaceAllString(s, " "), n)
+	return clip(whitespace.ReplaceAllString(s, " "), n)
 }
 
 // clip keeps the first n characters of s.
