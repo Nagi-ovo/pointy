@@ -71,6 +71,12 @@ func TestDocumentTextPrefersWhatIsOnScreen(t *testing.T) {
 	if got := documentText(long, func() string { return " \n" }); got != strings.Repeat("a", maxText) {
 		t.Errorf("long text without a visible range kept %d characters", len(got))
 	}
+	// UIA counts UTF-16 units: with an emoji, maxText characters are past
+	// the read limit.
+	emoji := "😀" + strings.Repeat("a", maxText-1)
+	if got := documentText(emoji, func() string { return "on screen" }); got != "on screen" {
+		t.Error("a text cut at the limit in UTF-16 units was taken whole")
+	}
 }
 
 func TestGrabReply(t *testing.T) {
