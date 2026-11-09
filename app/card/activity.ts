@@ -1,3 +1,5 @@
+import { t } from '../i18n/i18n.ts'
+
 const short = (s: string, n = 36) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
@@ -12,22 +14,22 @@ export function describeUrl(raw: string) {
     if (parts.length >= 2) return `${parts[0]}/${parts[1]}`
   }
   const bv = u.pathname.match(/BV\w+/)?.[0]
-  if (/bilibili\.com$/.test(u.hostname) && bv) return `B 站视频 ${bv}`
+  if (/bilibili\.com$/.test(u.hostname) && bv) return t('activity.bilibiliVideo', { id: bv })
   return short(`${u.hostname.replace(/^www\./, '')}${parts.length ? `/${parts.join('/')}` : ''}`)
 }
 
 export function activityLabel({ step, detail = '' }: ToolActivity) {
   switch (step) {
-    case 'search': return detail ? `正在搜索「${short(detail, 24)}」…` : '正在搜索…'
-    case 'fetch': return `正在读取 ${describeUrl(detail)}…`
-    case 'browse': return '正在上网查…'
-    case 'run': return detail ? `正在运行：${short(detail)}` : '正在运行命令…'
-    case 'read': return detail ? `正在看 ${baseName(detail)}…` : '正在看文件…'
-    case 'find': return detail ? `正在找「${short(detail, 24)}」…` : '正在找文件…'
-    case 'edit': return detail ? `正在改 ${baseName(detail)}…` : '正在改文件…'
-    case 'delegate': return '正在分派子任务…'
-    case 'plan': return '正在列计划…'
-    case 'skill': return '正在用技能…'
-    default: return '正在处理…'
+    case 'search': return detail ? t('activity.search', { query: short(detail, 24) }) : t('activity.searchAny')
+    case 'fetch': return t('activity.fetch', { page: describeUrl(detail) })
+    case 'browse': return t('activity.browse')
+    case 'run': return detail ? t('activity.run', { command: short(detail) }) : t('activity.runAny')
+    case 'read': return detail ? t('activity.read', { file: baseName(detail) }) : t('activity.readAny')
+    case 'find': return detail ? t('activity.find', { pattern: short(detail, 24) }) : t('activity.findAny')
+    case 'edit': return detail ? t('activity.edit', { file: baseName(detail) }) : t('activity.editAny')
+    case 'delegate': return t('activity.delegate')
+    case 'plan': return t('activity.plan')
+    case 'skill': return t('activity.skill')
+    default: return t('activity.other')
   }
 }

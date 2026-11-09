@@ -16,7 +16,7 @@ type PetMessage =
   | { type: 'pair-denied' }
   | { type: 'pair-busy' }
 
-interface PageSelection { blocked?: string, text?: string, before?: string, after?: string }
+interface PageSelection { blocked?: 'password-field', text?: string, before?: string, after?: string }
 interface GrabResult extends PageSelection { url?: string, pageTitle?: string, browser?: string }
 type PairResult = { ok: true } | { ok: false, error: string }
 type RuntimeMessage = PickResultMessage | { type: 'pair' } | { type: 'status' } | { type: 'unpair' }
@@ -81,7 +81,7 @@ async function connect() {
 
 function extractSelection(): PageSelection {
   const active = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null
-  if (active && active.tagName === 'INPUT' && active.type === 'password') return { blocked: '焦点在密码框里' }
+  if (active && active.tagName === 'INPUT' && active.type === 'password') return { blocked: 'password-field' }
   const editable = active && (active.tagName === 'TEXTAREA' || (active.tagName === 'INPUT' && /^(text|search|url|email|)$/.test(active.type)))
   if (editable && active.selectionStart !== active.selectionEnd) {
     const { value, selectionStart: s, selectionEnd: e } = active as { value: string, selectionStart: number, selectionEnd: number }

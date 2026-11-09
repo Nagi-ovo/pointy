@@ -20,6 +20,7 @@ import (
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/desktop"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 	"github.com/pointylab/pointy/desktop/internal/pick"
 	"github.com/pointylab/pointy/desktop/internal/server"
 	"github.com/pointylab/pointy/desktop/internal/ui"
@@ -78,6 +79,8 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 	}
 	settings := config.LoadSettings(home)
 	vis := ui.NewVisibility(settings)
+	applyLocale := func() { i18n.Use(i18n.Resolve(settings.Get().Locale, mygo.App.PreferredLanguages())) }
+	applyLocale()
 
 	var tray *ui.Tray
 	changed := func() { tray.Update() }
@@ -148,6 +151,7 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 		Extensions:         exts.Count,
 		ShowExtensionGuide: windows.ShowExtensionGuide,
 		ShowWelcome:        windows.ShowWelcome,
+		LocaleChanged:      func() { applyLocale(); tray.Update() },
 		Quit:               mygo.App.Quit,
 		Log:                logError,
 	}, icon)

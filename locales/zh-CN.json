@@ -1,0 +1,117 @@
+{
+  "language": {
+    "self": "简体中文",
+    "system": "跟随系统",
+    "menu": "语言"
+  },
+  "task": {
+    "new": "新任务",
+    "unnamed": "还没起标题的会话"
+  },
+  "progress": {
+    "sent": "发给 {agent} 了",
+    "thinking": "在想…",
+    "writing": "正在写…"
+  },
+  "activity": {
+    "search": "正在搜索「{query}」…",
+    "searchAny": "正在搜索…",
+    "fetch": "正在读取 {page}…",
+    "browse": "正在上网查…",
+    "run": "正在运行：{command}",
+    "runAny": "正在运行命令…",
+    "read": "正在看 {file}…",
+    "readAny": "正在看文件…",
+    "find": "正在找「{pattern}」…",
+    "findAny": "正在找文件…",
+    "edit": "正在改 {file}…",
+    "editAny": "正在改文件…",
+    "delegate": "正在分派子任务…",
+    "plan": "正在列计划…",
+    "skill": "正在用技能…",
+    "other": "正在处理…",
+    "bilibiliVideo": "B 站视频 {id}"
+  },
+  "tray": {
+    "approvals_other": "{count} 个操作等你批准",
+    "dndOn": "勿扰中",
+    "agentOffline": "{agent} 未连接",
+    "extensionOffline": "浏览器扩展未连接",
+    "extensionConnected": "浏览器扩展已连接（{count}）",
+    "extensionInstall": "浏览器扩展未连接，点这里安装…",
+    "shake": "晃一下鼠标指认",
+    "shakeOff": "关",
+    "shakeLow": "低：要晃得明显",
+    "shakeMedium": "中",
+    "shakeHigh": "高：轻晃就行",
+    "guide": "使用说明…",
+    "dnd": "勿扰模式",
+    "quit": "退出 Pointy"
+  },
+  "approval": {
+    "title": "{agent} 有个操作等你批准",
+    "body": "点这里打开 {agent}"
+  },
+  "hint": {
+    "access": "要先允许 Pointy 使用辅助功能：系统设置 → 隐私与安全性 → 辅助功能",
+    "elevated": "这个程序以管理员身份运行，Pointy 读不到",
+    "noHook": "拦不住这次点击，没法指认。要先允许 Pointy 使用辅助功能",
+    "webSession": "已在浏览器里的 {agent} 切到这个会话"
+  },
+  "note": {
+    "extensionOffline": "浏览器扩展没连上，这次按普通程序指认，网页里指不到具体段落。",
+    "extensionSilent": "浏览器扩展这次没响应，按普通程序指认的。"
+  },
+  "overlay": {
+    "extensionOffline": "浏览器扩展未连接",
+    "named": "{control}：{name}"
+  },
+  "control": {
+    "Document": "文档",
+    "Edit": "输入框",
+    "Text": "文字",
+    "List": "列表",
+    "ListItem": "列表项",
+    "Button": "按钮",
+    "Pane": "面板",
+    "Window": "窗口",
+    "Group": "分组",
+    "DataItem": "数据行",
+    "TreeItem": "树节点",
+    "Hyperlink": "链接",
+    "Image": "图片",
+    "Table": "表格",
+    "Custom": "控件",
+    "MenuItem": "菜单项"
+  },
+  "field": {
+    "control": "控件",
+    "name": "名称",
+    "class": "类名",
+    "link": "链接",
+    "appWindow": "程序界面"
+  },
+  "pair": {
+    "title": "{browser} 里的 Pointy 扩展想连接",
+    "body": "允许后，在浏览器里晃一下鼠标就能指认网页上的具体内容，右键菜单也能「问 Pointy」。",
+    "deny": "不允许",
+    "allow": "允许"
+  },
+  "welcome": {
+    "title": "Pointy 已就位",
+    "shake": "**晃一下鼠标**进入指认，指到网页、文档、聊天窗口里的任意内容，点一下就能问 {agent}。",
+    "trayMac": "菜单栏里的鲸鱼图标可以调晃动灵敏度、开勿扰。",
+    "trayWin": "托盘里的鲸鱼图标可以调晃动灵敏度、开勿扰。",
+    "extension": "在浏览器里用的话，推荐装上 Pointy 的浏览器扩展，能指认到网页里具体的段落。",
+    "later": "以后再说",
+    "install": "安装浏览器扩展"
+  },
+  "guide": {
+    "title": "安装浏览器扩展（推荐）",
+    "why": "装了扩展，在网页里能指认到具体的段落、图片，还能右键「问 Pointy」。没装也能用，只是网页按整窗截图处理。",
+    "step1": "1. 在浏览器地址栏打开扩展页，打开右上角的「开发者模式」。",
+    "step2": "2. 点「加载已解压的扩展程序」，把这个路径粘贴到选文件夹窗口的地址栏，再点「选择文件夹」。",
+    "step3": "3. 装好后 Pointy 会弹窗问要不要让它连接，点「允许」就行。",
+    "ok": "知道了"
+  }
+}

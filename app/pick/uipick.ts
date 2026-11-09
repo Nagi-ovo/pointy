@@ -52,7 +52,7 @@ const FOCUS_MAX = 4
 export type PickRelease = (() => void) & { shift?: (dx: number, dy: number) => void }
 
 export type NativePick =
-  | { blocked: '指的是密码框'; release?: PickRelease }
+  | { blocked: BlockReason; release?: PickRelease }
   | {
     blocked?: undefined
     release: PickRelease
@@ -66,7 +66,7 @@ export type NativePick =
 
 type DrawnControl = A11yChainItem & { rect: ScreenRect }
 
-export function pickNative({ note }: { note?: string } = {}): Promise<NativePick | null> {
+export function pickNative({ note }: { note?: Message } = {}): Promise<NativePick | null> {
   const cursor = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursor)
   const overlay = new BrowserWindow({
@@ -122,7 +122,8 @@ export function pickNative({ note }: { note?: string } = {}): Promise<NativePick
       const f = c.opaque ? focusRect(c.rect, point, os.unitsPerDip(display), zoom) : undefined
       overlay.webContents.send('highlight', {
         ...toLocal(c.rect),
-        label: `${label(c)}${c.name ? `：${c.name}` : ''}`,
+        control: { key: c.control && c.control in CONTROL_LABEL ? `control.${c.control.replace('ControlType.', '')}` : 'control.Custom' },
+        ...(c.name ? { name: c.name } : {}),
         focus: f ? toLocal(f) : null,
       } satisfies OverlayHighlight)
     }
@@ -161,7 +162,7 @@ export function pickNative({ note }: { note?: string } = {}): Promise<NativePick
       const level = Math.min(levelUp, chain.length - 1)
       await new Promise(r => setTimeout(r, 150))
       const detail = await uiaRequest(`element ${point.x} ${point.y} ${level}`, 3000)
-      if (!detail?.ok) { release(); return resolve(detail?.isPassword ? { blocked: '指的是密码框' } : null) }
+      if (!detail?.ok) { release(); return resolve(detail?.isPassword ? { blocked: 'password-field' } : null) }
       const whole = isWholeWindow({ rect: detail.rect, win: detail.win, control: detail.control })
       const opaque = isOpaque({ cls: detail.className, rect: detail.rect, kids: detail.kids, readable: detail.readable, win: detail.win, control: detail.control }) && (whole || !(detail.text ?? '').trim())
       const focus = detail.rect && opaque ? focusRect(detail.rect, point, os.unitsPerDip(display), zoom) : undefined

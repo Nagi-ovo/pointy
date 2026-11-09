@@ -1,0 +1,118 @@
+{
+  "language": {
+    "self": "English",
+    "system": "Same as System",
+    "menu": "Language"
+  },
+  "task": {
+    "new": "New task",
+    "unnamed": "Untitled session"
+  },
+  "progress": {
+    "sent": "Sent to {agent}",
+    "thinking": "Thinking…",
+    "writing": "Writing…"
+  },
+  "activity": {
+    "search": "Searching for “{query}”…",
+    "searchAny": "Searching…",
+    "fetch": "Reading {page}…",
+    "browse": "Looking it up online…",
+    "run": "Running: {command}",
+    "runAny": "Running a command…",
+    "read": "Reading {file}…",
+    "readAny": "Reading files…",
+    "find": "Looking for “{pattern}”…",
+    "findAny": "Looking for files…",
+    "edit": "Editing {file}…",
+    "editAny": "Editing files…",
+    "delegate": "Handing off a subtask…",
+    "plan": "Making a plan…",
+    "skill": "Using a skill…",
+    "other": "Working…",
+    "bilibiliVideo": "Bilibili video {id}"
+  },
+  "tray": {
+    "approvals_one": "{count} action needs your approval",
+    "approvals_other": "{count} actions need your approval",
+    "dndOn": "Do Not Disturb is on",
+    "agentOffline": "{agent} is not connected",
+    "extensionOffline": "Browser extension not connected",
+    "extensionConnected": "Browser extension connected ({count})",
+    "extensionInstall": "Browser extension not connected. Install…",
+    "shake": "Shake the Mouse to Point",
+    "shakeOff": "Off",
+    "shakeLow": "Low: shake hard",
+    "shakeMedium": "Medium",
+    "shakeHigh": "High: a light shake will do",
+    "guide": "How to Use…",
+    "dnd": "Do Not Disturb",
+    "quit": "Quit Pointy"
+  },
+  "approval": {
+    "title": "{agent} needs your approval",
+    "body": "Click to open {agent}"
+  },
+  "hint": {
+    "access": "Allow Pointy first: System Settings → Privacy & Security → Accessibility",
+    "elevated": "This app runs as administrator, so Pointy can't read it",
+    "noHook": "Pointy couldn't hold this click, so it can't point. Allow Pointy under Accessibility first",
+    "webSession": "Switched {agent} in your browser to this session"
+  },
+  "note": {
+    "extensionOffline": "The browser extension isn't connected, so this page was read like any app and Pointy can't point at a paragraph in it.",
+    "extensionSilent": "The browser extension didn't answer this time, so this was read like any app."
+  },
+  "overlay": {
+    "extensionOffline": "Browser extension not connected",
+    "named": "{control}: {name}"
+  },
+  "control": {
+    "Document": "Document",
+    "Edit": "Text field",
+    "Text": "Text",
+    "List": "List",
+    "ListItem": "List item",
+    "Button": "Button",
+    "Pane": "Pane",
+    "Window": "Window",
+    "Group": "Group",
+    "DataItem": "Row",
+    "TreeItem": "Tree item",
+    "Hyperlink": "Link",
+    "Image": "Image",
+    "Table": "Table",
+    "Custom": "Control",
+    "MenuItem": "Menu item"
+  },
+  "field": {
+    "control": "Control",
+    "name": "Name",
+    "class": "Class",
+    "link": "Link",
+    "appWindow": "App window"
+  },
+  "pair": {
+    "title": "The Pointy extension in {browser} wants to connect",
+    "body": "Once allowed, shake the mouse in the browser to point at anything on a page, or choose “Ask Pointy” from the right-click menu.",
+    "deny": "Don't Allow",
+    "allow": "Allow"
+  },
+  "welcome": {
+    "title": "Pointy is ready",
+    "shake": "**Shake the mouse** to start pointing. Point at anything in a page, a document or a chat, click, and ask {agent}.",
+    "trayMac": "The whale in the menu bar sets how hard to shake and turns on Do Not Disturb.",
+    "trayWin": "The whale in the system tray sets how hard to shake and turns on Do Not Disturb.",
+    "extension": "In a browser, install Pointy's browser extension to point at a single paragraph of a page.",
+    "later": "Later",
+    "install": "Install Browser Extension"
+  },
+  "guide": {
+    "title": "Install the browser extension (recommended)",
+    "why": "With the extension, Pointy can point at a paragraph or an image in a page, and the right-click menu gets “Ask Pointy”. Without it, Pointy still works and reads pages as a screenshot of the window.",
+    "step1": "1. Open the extensions page from the address bar and turn on “Developer mode” in the top right.",
+    "step2": "2. Click “Load unpacked”, paste this path into the address bar of the folder window, then click “Select Folder”.",
+    "step3": "3. Once it is installed, Pointy asks whether to let it connect. Click “Allow”.",
+    "ok": "Got It"
+  }
+}

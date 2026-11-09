@@ -1,3 +1,4 @@
+import { t, tm } from '../i18n/i18n.ts'
 import { activityLabel } from './activity.ts'
 import { renderMarkdown } from './markdown.ts'
 
@@ -209,10 +210,9 @@ let currentId: string | undefined
 let targetValue = 'new'
 let pageKey = ''
 
-const UNNAMED = '还没起标题的会话'
-const titleOf = (s: SessionInfo) => s.title || UNNAMED
+const titleOf = (s: SessionInfo) => s.title || t('task.unnamed')
 const nameOf = (s: SessionInfo | undefined): SessionName => (!s ? { kind: 'new' } : s.title ? { kind: 'named', title: s.title } : { kind: 'unnamed' })
-const nameLabel = (n: SessionName) => (n.kind === 'named' ? n.title : n.kind === 'unnamed' ? UNNAMED : undefined)
+const nameLabel = (n: SessionName) => (n.kind === 'named' ? n.title : n.kind === 'unnamed' ? t('task.unnamed') : undefined)
 function rename(title: string | undefined) {
   if (!title || (sessionName.kind === 'named' && sessionName.title === title)) return false
   sessionName = { kind: 'named', title }
@@ -693,9 +693,9 @@ const isTool = (p: Progress): p is ToolActivity => p.step !== 'sent' && p.step !
 const sameProgress = (a: Progress, b: Progress) => a.step === b.step && (isTool(a) ? a.detail : undefined) === (isTool(b) ? b.detail : undefined)
 function progressLabel(p: Progress) {
   switch (p.step) {
-    case 'sent': return `发给 ${agentName} 了`
-    case 'thinking': return '在想…'
-    case 'writing': return '正在写…'
+    case 'sent': return t('progress.sent', { agent: agentName })
+    case 'thinking': return t('progress.thinking')
+    case 'writing': return t('progress.writing')
     default: return activityLabel(p)
   }
 }
@@ -803,7 +803,7 @@ window.card.onInit((data) => {
   pageKey = g.url ? String(g.url).split('#')[0] : (g.source?.app ? `${g.source.app}|${g.source.title ?? ''}` : '')
   $('source').textContent = describeSource(g)
   if (g.note?.text) {
-    $('note').querySelector('span')!.textContent = g.note.text
+    $('note').querySelector('span')!.textContent = tm(g.note.text)
     $('note').querySelector('button')!.hidden = !g.note.install
     $('note').hidden = false
   }
@@ -841,10 +841,10 @@ window.card.onInit((data) => {
 })
 
 function showTitle() {
-  const t = nameLabel(sessionName) ?? (lastAsked || '新任务')
-  $('title').textContent = t
-  $('title').title = t
-  $('title').hidden = !t
+  const title = nameLabel(sessionName) ?? (lastAsked || t('task.new'))
+  $('title').textContent = title
+  $('title').title = title
+  $('title').hidden = !title
 }
 
 window.card.onAgent((msg) => {

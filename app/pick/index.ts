@@ -47,11 +47,11 @@ type Fallback = 'no-extension' | 'no-response'
 function fallbackNote(fallback: Fallback | undefined): { note?: GrabNote } {
   if (!fallback || fallbackNoted) return {}
   fallbackNoted = true
-  return { note: { text: fallback === 'no-extension' ? '浏览器扩展没连上，这次按普通程序指认，网页里指不到具体段落。' : '浏览器扩展这次没响应，按普通程序指认的。', install: fallback === 'no-extension' } }
+  return { note: { text: { key: fallback === 'no-extension' ? 'note.extensionOffline' : 'note.extensionSilent' }, install: fallback === 'no-extension' } }
 }
 
 async function pickNativeAndOpen(fg: Foreground, fallback: Fallback | undefined) {
-  const r = await busy(() => pickNative(fallback ? { note: '浏览器扩展未连接' } : {}))
+  const r = await busy(() => pickNative(fallback ? { note: { key: 'overlay.extensionOffline' } } : {}))
   if (!r) return
   if (r.blocked) { r.release?.(); return }
   if (settings.debugPick) logError('pick-diag', JSON.stringify({ exe: fg.exe, ...r.diag }))

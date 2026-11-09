@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 	"github.com/pointylab/pointy/desktop/internal/server"
 )
 
@@ -162,7 +163,7 @@ func (a *DSH) onPluginMessage(m server.Message) {
 		a.mu.Unlock()
 		if a.deps.Notify != nil {
 			sid := msg.SessionID
-			a.deps.Notify("DSH 有个操作等你批准", "点这里打开 DSH", func() { a.Open(sid) })
+			a.deps.Notify(i18n.T(i18n.ApprovalTitle, "agent", Name), i18n.T(i18n.ApprovalBody, "agent", Name), func() { a.Open(sid) })
 		}
 		a.changed()
 	case "approval-closed":
@@ -214,7 +215,7 @@ func (a *DSH) Open(sessionID string) {
 	if u.web {
 		if a.deps.FocusTab == nil || !a.deps.FocusTab(u.origin) {
 			if a.deps.ShowHint != nil {
-				a.deps.ShowHint("已在浏览器里的 DSH 切到这个会话")
+				a.deps.ShowHint(i18n.T(i18n.HintWebSession, "agent", Name))
 			}
 		}
 	} else if a.deps.OpenURL != nil {

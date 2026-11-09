@@ -8,5 +8,5 @@
     "outDir": "../build/app"
   },
   "include": ["**/*.ts"],
-  "exclude": ["card/card.ts", "card/markdown.ts", "card/activity.ts", "pill/pill.ts", "notice/notice.ts", "intro/intro.ts", "pick/overlay/overlay.ts", "bridge/service.ts", "bridge/card.ts", "bridge/pill.ts", "bridge/notice.ts", "bridge/intro.ts", "bridge/overlay.ts"]
+  "exclude": ["i18n/i18n.ts", "i18n/catalogs.ts", "card/card.ts", "card/markdown.ts", "card/activity.ts", "pill/pill.ts", "notice/notice.ts", "intro/intro.ts", "pick/overlay/overlay.ts", "bridge/service.ts", "bridge/card.ts", "bridge/pill.ts", "bridge/notice.ts", "bridge/intro.ts", "bridge/overlay.ts"]
 }

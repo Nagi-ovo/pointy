@@ -31,7 +31,7 @@ func (o *Overlay) Highlight(h *contract.OverlayHighlight) {
 }
 
 // Note adds a line to the overlay's hint.
-func (o *Overlay) Note(text string) { o.emit(func() { noteEvent.Emit(o.win, text) }) }
+func (o *Overlay) Note(m contract.Message) { o.emit(func() { noteEvent.Emit(o.win, m) }) }
 
 // Shift moves the drawn box as the window under it moves.
 func (o *Overlay) Shift(dx, dy float64) {

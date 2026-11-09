@@ -9,6 +9,9 @@ export interface AgentInfo {
   name: string;
 }
 
+/** BlockReason is why Pointy keeps out of what the user pointed at. */
+export type BlockReason = "password-field" | "blocked-app" | "login-window";
+
 /**
  * CardInit opens a card: a pairing code when Mode is "pair", else a grab
  * to ask about.
@@ -34,7 +37,7 @@ export interface Grab {
   before?: string;
   after?: string;
   note?: GrabNote;
-  blocked?: string;
+  blocked?: BlockReason;
 }
 
 /** GrabElement is the element a pick landed on. */
@@ -64,7 +67,7 @@ export type GrabMethod = "pick" | "uia-pick" | "extension" | "uia" | "clipboard"
 
 /** GrabNote is a line the card shows above the grab. */
 export interface GrabNote {
-  text: string;
+  text: Message;
   install: boolean;
 }
 
@@ -97,14 +100,23 @@ export interface LocalRect {
   height: number;
 }
 
+/**
+ * Message is a text a page says from the catalogs in locales/: the key
+ * of the message and the values of its {name} placeholders.
+ */
+export interface Message {
+  key: string;
+  params?: Record<string, string>;
+}
+
 export interface NoticeButton {
   id: string;
-  label: string;
+  label: Message;
   primary?: boolean;
 }
 
 export interface NoticeInit {
-  title: string;
+  title: Message;
   body: NoticeParagraph[];
   buttons?: NoticeButton[];
 }
@@ -114,17 +126,21 @@ export interface NoticeInit {
  * is set.
  */
 export interface NoticeParagraph {
-  text: string;
+  text: Message;
   copy?: string[];
 }
 
-/** OverlayHighlight is the box the pointing overlay draws. */
+/**
+ * OverlayHighlight is the box the pointing overlay draws, labelled with
+ * the control's type and name.
+ */
 export interface OverlayHighlight {
   x: number;
   y: number;
   width: number;
   height: number;
-  label: string;
+  control: Message;
+  name?: string;
   focus: LocalRect | null;
 }
 
@@ -268,5 +284,5 @@ export const events = {
   highlight: event<OverlayHighlight | null>("highlight"),
   hold: event<{}>("hold"),
   shift: event<Shift>("shift"),
-  note: event<string>("note"),
+  note: event<Message>("note"),
 } as const;

@@ -90,7 +90,7 @@ func (h fakeHook) Close()                        { h.f.mu.Lock(); h.f.tapOn = fa
 type fakeOverlay struct {
 	mu         sync.Mutex
 	highlights []*contract.OverlayHighlight
-	notes      []string
+	notes      []contract.Message
 	owner      desktop.WindowID
 	held       bool
 	closed     bool
@@ -101,7 +101,11 @@ func (o *fakeOverlay) Highlight(h *contract.OverlayHighlight) {
 	o.highlights = append(o.highlights, h)
 	o.mu.Unlock()
 }
-func (o *fakeOverlay) Note(t string)        { o.mu.Lock(); o.notes = append(o.notes, t); o.mu.Unlock() }
+func (o *fakeOverlay) Note(t contract.Message) {
+	o.mu.Lock()
+	o.notes = append(o.notes, t)
+	o.mu.Unlock()
+}
 func (o *fakeOverlay) Shift(dx, dy float64) {}
 func (o *fakeOverlay) Hold(owner desktop.WindowID) {
 	o.mu.Lock()
@@ -169,7 +173,7 @@ func (r *rig) deps() Deps {
 func (r *rig) start(ctx context.Context) {
 	r.done = make(chan struct{})
 	go func() {
-		r.pick, r.err = pointNative(ctx, r.deps(), "")
+		r.pick, r.err = pointNative(ctx, r.deps(), contract.Message{})
 		close(r.done)
 	}()
 }
@@ -221,7 +225,7 @@ func TestClickPicksTheControlAndHoldsTheBox(t *testing.T) {
 	r := newRig(t)
 	r.start(context.Background())
 	r.pointed()
-	if h := r.overlay.last(); h.X != 100 || h.Width != 600 || h.Label != "文档" || h.Focus != nil {
+	if h := r.overlay.last(); h.X != 100 || h.Width != 600 || h.Control.Key != "control.Document" || h.Focus != nil {
 		t.Fatalf("highlight %+v", h)
 	}
 	r.d.events <- desktop.LeftUp
@@ -310,9 +314,9 @@ func TestBracketClimbsToTheParent(t *testing.T) {
 	r.pointed()
 	r.press("]")
 	r.press("]")
-	r.waitFor("the parent's box", func() bool { return r.overlay.last().Label == "窗口：notes.txt" })
+	r.waitFor("the parent's box", func() bool { h := r.overlay.last(); return h.Control.Key == "control.Window" && h.Name == "notes.txt" })
 	r.press("[")
-	r.waitFor("the child's box", func() bool { return r.overlay.last().Label == "文档" })
+	r.waitFor("the child's box", func() bool { return r.overlay.last().Control.Key == "control.Document" })
 	r.press("]")
 	r.press("Space")
 	r.finish()

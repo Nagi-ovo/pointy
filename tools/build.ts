@@ -18,3 +18,7 @@ for (const dir of ['app', 'extension', 'assets']) {
     filter: (src) => fs.statSync(src).isDirectory() || !isCode(src),
   })
 }
+
+const catalog = (lang: string) => JSON.parse(fs.readFileSync(path.join(root, 'locales', `${lang}.json`), 'utf8'))
+const catalogs = { 'zh-CN': catalog('zh-CN'), en: catalog('en') }
+fs.writeFileSync(path.join(build, 'app', 'i18n', 'catalogs.js'), `export default ${JSON.stringify(catalogs)}\n`)

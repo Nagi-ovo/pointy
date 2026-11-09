@@ -8,6 +8,7 @@ import (
 
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 	"github.com/pointylab/pointy/desktop/internal/server"
 )
 
@@ -50,9 +51,9 @@ func (e *Extensions) Pair(c *server.Conn, hello server.Hello, stopKick func()) {
 		browser = "Edge"
 	}
 	choice, cancel := e.deps.ShowNotice(contract.NoticeInit{
-		Title:   browser + " 里的 Pointy 扩展想连接",
-		Body:    []contract.NoticeParagraph{{Text: "允许后，在浏览器里晃一下鼠标就能指认网页上的具体内容，右键菜单也能「问 Pointy」。"}},
-		Buttons: []contract.NoticeButton{{ID: "deny", Label: "不允许"}, {ID: "allow", Label: "允许", Primary: true}},
+		Title:   i18n.Msg(i18n.PairTitle, "browser", browser),
+		Body:    []contract.NoticeParagraph{{Text: i18n.Msg(i18n.PairBody)}},
+		Buttons: []contract.NoticeButton{{ID: "deny", Label: i18n.Msg(i18n.PairDeny)}, {ID: "allow", Label: i18n.Msg(i18n.PairAllow), Primary: true}},
 	}, pairAskTimeout)
 	go func() {
 		// The extension's service worker stops unless it hears from Pointy

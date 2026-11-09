@@ -1,3 +1,5 @@
+import { t } from '../i18n/i18n.ts'
+
 const list = document.getElementById('list')!
 const rows = new Map<string, HTMLElement>()
 
@@ -26,11 +28,9 @@ window.pill.onList((items) => {
     let el = rows.get(p.id)
     if (!el) { el = row(p); rows.set(p.id, el); list.append(el) }
     el.className = `pill ${p.state}`
-    const title = p.title || '新任务'
+    const title = p.title || t('task.new')
     el.querySelector('.title')!.textContent = title
     el.title = { run: '在后台做：', done: '做完了：', error: '出错了：' }[p.state] + title + '\n点一下放回卡片'
   }
   fit()
 })
-
-export {}

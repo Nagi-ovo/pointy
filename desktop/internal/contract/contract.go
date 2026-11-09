@@ -3,6 +3,13 @@
 // app/bridge/mygo.ts, which app/types.d.ts aliases.
 package contract
 
+// Message is a text a page says from the catalogs in locales/: the key
+// of the message and the values of its {name} placeholders.
+type Message struct {
+	Key    string            `json:"key"`
+	Params map[string]string `json:"params,omitempty"`
+}
+
 // GrabSource is the app and window a grab came from.
 type GrabSource struct {
 	App   string `json:"app"`
@@ -53,9 +60,18 @@ const (
 
 // GrabNote is a line the card shows above the grab.
 type GrabNote struct {
-	Text    string `json:"text"`
-	Install bool   `json:"install"`
+	Text    Message `json:"text"`
+	Install bool    `json:"install"`
 }
+
+// BlockReason is why Pointy keeps out of what the user pointed at.
+type BlockReason string
+
+const (
+	BlockPasswordField BlockReason = "password-field"
+	BlockApp           BlockReason = "blocked-app"
+	BlockLoginWindow   BlockReason = "login-window"
+)
 
 // Grab is what the user pointed at, which a card asks about.
 type Grab struct {
@@ -71,7 +87,7 @@ type Grab struct {
 	Before    string       `json:"before,omitempty"`
 	After     string       `json:"after,omitempty"`
 	Note      *GrabNote    `json:"note,omitempty"`
-	Blocked   string       `json:"blocked,omitempty"`
+	Blocked   BlockReason  `json:"blocked,omitempty"`
 }
 
 // AgentInfo names the agent a card asks.
@@ -114,20 +130,20 @@ type PillItem struct {
 }
 
 type NoticeButton struct {
-	ID      string `json:"id"`
-	Label   string `json:"label"`
-	Primary bool   `json:"primary,omitempty"`
+	ID      string  `json:"id"`
+	Label   Message `json:"label"`
+	Primary bool    `json:"primary,omitempty"`
 }
 
 // NoticeParagraph is a paragraph, with values to copy under it when Copy
 // is set.
 type NoticeParagraph struct {
-	Text string   `json:"text"`
+	Text Message  `json:"text"`
 	Copy []string `json:"copy,omitempty"`
 }
 
 type NoticeInit struct {
-	Title   string            `json:"title"`
+	Title   Message           `json:"title"`
 	Body    []NoticeParagraph `json:"body"`
 	Buttons []NoticeButton    `json:"buttons,omitempty"`
 }
@@ -144,11 +160,13 @@ type LocalRect struct {
 	Height float64 `json:"height"`
 }
 
-// OverlayHighlight is the box the pointing overlay draws.
+// OverlayHighlight is the box the pointing overlay draws, labelled with
+// the control's type and name.
 type OverlayHighlight struct {
 	LocalRect
-	Label string     `json:"label"`
-	Focus *LocalRect `json:"focus"`
+	Control Message    `json:"control"`
+	Name    string     `json:"name,omitempty"`
+	Focus   *LocalRect `json:"focus"`
 }
 
 // Shift moves the overlay's drawing as the window under it moves.

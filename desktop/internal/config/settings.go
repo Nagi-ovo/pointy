@@ -24,6 +24,7 @@ type Settings struct {
 	Welcomed        bool           `json:"welcomed"`
 	WelcomedVersion string         `json:"welcomedVersion,omitempty"`
 	DebugPick       bool           `json:"debugPick,omitzero"`
+	Locale          string         `json:"locale,omitempty"` // chosen in the tray; "" follows the system
 	Unknown         jsontext.Value `json:",embed"`
 }
 

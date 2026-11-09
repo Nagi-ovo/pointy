@@ -1,12 +1,12 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/pointylab/pointy/desktop/internal/agent"
 	"github.com/pointylab/pointy/desktop/internal/config"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 )
 
 // TrayDeps are what the menu bar icon shows and does.
@@ -17,8 +17,10 @@ type TrayDeps struct {
 	Extensions         func() int
 	ShowExtensionGuide func()
 	ShowWelcome        func()
-	Quit               func()
-	Log                func(kind string, err any)
+	// LocaleChanged follows the language the user chose in Settings.
+	LocaleChanged func()
+	Quit          func()
+	Log           func(kind string, err any)
 }
 
 // Tray is the whale in the menu bar.
@@ -55,16 +57,16 @@ func trayContent(d TrayDeps) (string, []*mygo.MenuItem) {
 	ext := d.Extensions()
 	var status []string
 	if st.PendingApprovals > 0 {
-		status = append(status, fmt.Sprintf("%d 个操作等你批准", st.PendingApprovals))
+		status = append(status, i18n.T(i18n.TrayApprovals, "count", st.PendingApprovals))
 	}
 	if s.DND {
-		status = append(status, "勿扰中")
+		status = append(status, i18n.T(i18n.TrayDNDOn))
 	}
 	if !st.Connected {
-		status = append(status, agent.Name+" 未连接")
+		status = append(status, i18n.T(i18n.TrayAgentOffline, "agent", agent.Name))
 	}
 	if ext == 0 {
-		status = append(status, "浏览器扩展未连接")
+		status = append(status, i18n.T(i18n.TrayExtensionOffline))
 	}
 	tip := "Pointy"
 	if len(status) > 0 {
@@ -76,34 +78,45 @@ func trayContent(d TrayDeps) (string, []*mygo.MenuItem) {
 			d.Log("settings", err)
 		}
 	}
-	shake := []*mygo.MenuItem{{Label: "关", Type: mygo.MenuItemRadio, Checked: !s.Shake, Click: func(*mygo.MenuItem, *mygo.Window) {
+	shake := []*mygo.MenuItem{{Label: i18n.T(i18n.TrayShakeOff), Type: mygo.MenuItemRadio, Checked: !s.Shake, Click: func(*mygo.MenuItem, *mygo.Window) {
 		save(func(s *config.Settings) { s.Shake = false })
 		d.Visibility.Changed()
 	}}}
 	for _, l := range []struct {
 		level config.ShakeLevel
-		label string
-	}{{config.ShakeLow, "低：要晃得明显"}, {config.ShakeMedium, "中"}, {config.ShakeHigh, "高：轻晃就行"}} {
-		shake = append(shake, &mygo.MenuItem{Label: l.label, Type: mygo.MenuItemRadio, Checked: s.Shake && s.ShakeLevel == l.level, Click: func(*mygo.MenuItem, *mygo.Window) {
+		label i18n.Key
+	}{{config.ShakeLow, i18n.TrayShakeLow}, {config.ShakeMedium, i18n.TrayShakeMedium}, {config.ShakeHigh, i18n.TrayShakeHigh}} {
+		shake = append(shake, &mygo.MenuItem{Label: i18n.T(l.label), Type: mygo.MenuItemRadio, Checked: s.Shake && s.ShakeLevel == l.level, Click: func(*mygo.MenuItem, *mygo.Window) {
 			save(func(s *config.Settings) { s.Shake, s.ShakeLevel = true, l.level })
 			d.Visibility.Changed()
 		}})
 	}
-	extItem := &mygo.MenuItem{Label: fmt.Sprintf("浏览器扩展已连接（%d）", ext), Disabled: true}
+	languages := []*mygo.MenuItem{{Label: i18n.T(i18n.LanguageSystem), Type: mygo.MenuItemRadio, Checked: s.Locale == "", Click: func(*mygo.MenuItem, *mygo.Window) {
+		save(func(s *config.Settings) { s.Locale = "" })
+		d.LocaleChanged()
+	}}}
+	for _, lang := range i18n.Languages {
+		languages = append(languages, &mygo.MenuItem{Label: i18n.In(lang, i18n.LanguageSelf), Type: mygo.MenuItemRadio, Checked: s.Locale == lang, Click: func(*mygo.MenuItem, *mygo.Window) {
+			save(func(s *config.Settings) { s.Locale = lang })
+			d.LocaleChanged()
+		}})
+	}
+	extItem := &mygo.MenuItem{Label: i18n.T(i18n.TrayExtensionConnected, "count", ext), Disabled: true}
 	if ext == 0 {
-		extItem = &mygo.MenuItem{Label: "浏览器扩展未连接，点这里安装…", Click: func(*mygo.MenuItem, *mygo.Window) { go d.ShowExtensionGuide() }}
+		extItem = &mygo.MenuItem{Label: i18n.T(i18n.TrayExtensionInstall), Click: func(*mygo.MenuItem, *mygo.Window) { go d.ShowExtensionGuide() }}
 	}
 	return tip, []*mygo.MenuItem{
-		{Label: "晃一下鼠标指认", Submenu: shake},
+		{Label: i18n.T(i18n.TrayShake), Submenu: shake},
 		extItem,
 		mygo.Separator(),
-		{Label: "使用说明…", Click: func(*mygo.MenuItem, *mygo.Window) { go d.ShowWelcome() }},
-		{Label: "勿扰模式", Type: mygo.MenuItemCheckbox, Checked: s.DND, Click: func(item *mygo.MenuItem, _ *mygo.Window) {
+		{Label: i18n.T(i18n.TrayGuide), Click: func(*mygo.MenuItem, *mygo.Window) { go d.ShowWelcome() }},
+		{Label: i18n.T(i18n.TrayDND), Type: mygo.MenuItemCheckbox, Checked: s.DND, Click: func(item *mygo.MenuItem, _ *mygo.Window) {
 			save(func(s *config.Settings) { s.DND = item.Checked })
 			d.Visibility.Changed()
 		}},
+		{Label: i18n.T(i18n.LanguageMenu), Submenu: languages},
 		mygo.Separator(),
-		{Label: "退出 Pointy", Click: func(*mygo.MenuItem, *mygo.Window) { d.Quit() }},
+		{Label: i18n.T(i18n.TrayQuit), Click: func(*mygo.MenuItem, *mygo.Window) { d.Quit() }},
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/desktop"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 )
 
 const (
@@ -29,7 +30,7 @@ const (
 // Overlay draws what the user points at; ui.Overlay is one.
 type Overlay interface {
 	Highlight(*contract.OverlayHighlight)
-	Note(string)
+	Note(contract.Message)
 	Shift(dx, dy float64)
 	// Hold keeps only the box, right above owner.
 	Hold(owner desktop.WindowID)
@@ -143,9 +144,9 @@ func (p *Picker) note(f fallback) *contract.GrabNote {
 		return nil
 	}
 	if f == noExtension {
-		return &contract.GrabNote{Text: "浏览器扩展没连上，这次按普通程序指认，网页里指不到具体段落。", Install: true}
+		return &contract.GrabNote{Text: i18n.Msg(i18n.NoteExtensionOffline), Install: true}
 	}
-	return &contract.GrabNote{Text: "浏览器扩展这次没响应，按普通程序指认的。"}
+	return &contract.GrabNote{Text: i18n.Msg(i18n.NoteExtensionSilent)}
 }
 
 // Pick opens a card on what is at the mouse: the page element the
@@ -168,15 +169,15 @@ func (p *Picker) Pick(at desktop.Point) {
 
 	d := p.d.Desktop
 	fg, err := d.Foreground()
-	if err != nil || blockedReason(d, fg) != "" {
+	if err != nil || blocked(d, fg) {
 		return
 	}
-	if hint := d.AccessHint(); hint != "" {
-		p.d.ShowHint(hint)
+	if !d.HasAccess() {
+		p.d.ShowHint(i18n.T(i18n.HintAccess))
 		return
 	}
 	if d.ElevatedUnderCursor() {
-		p.d.ShowHint("这个程序以管理员身份运行，Pointy 读不到")
+		p.d.ShowHint(i18n.T(i18n.HintElevated))
 		return
 	}
 	source := contract.GrabSource{App: fg.Exe, Title: fg.Title}
@@ -216,9 +217,9 @@ func (p *Picker) Pick(at desktop.Point) {
 }
 
 func (p *Picker) pickControl(ctx context.Context, fg desktop.Foreground, f fallback) {
-	note := ""
+	var note contract.Message
 	if f != noFallback {
-		note = "浏览器扩展未连接"
+		note = i18n.Msg(i18n.OverlayExtensionOffline)
 	}
 	r, err := pointNative(ctx, p.d, note)
 	if err != nil {
@@ -226,7 +227,7 @@ func (p *Picker) pickControl(ctx context.Context, fg desktop.Foreground, f fallb
 			p.d.log("pick", err)
 		}
 		if errors.Is(err, errNoHook) {
-			p.d.ShowHint("拦不住这次点击，没法指认。要先允许 Pointy 使用辅助功能")
+			p.d.ShowHint(i18n.T(i18n.HintNoHook))
 		}
 		return
 	}
@@ -238,13 +239,13 @@ func (p *Picker) pickControl(ctx context.Context, fg desktop.Foreground, f fallb
 		p.logDiag(fg, r)
 	}
 	text := el.Text
-	fields := map[string]string{"控件": controlLabel(el.Control), "名称": firstRunes(el.Name, 120), "类名": el.ClassName}
+	fields := map[string]string{i18n.T(i18n.FieldControl): i18n.T(i18n.Control(el.Control)), i18n.T(i18n.FieldName): firstRunes(el.Name, 120), i18n.T(i18n.FieldClass): el.ClassName}
 	if el.Href != "" {
-		fields["链接"] = el.Href
+		fields[i18n.T(i18n.FieldLink)] = el.Href
 	}
 	if r.opaque {
 		text = ""
-		fields = map[string]string{"控件": "程序界面"}
+		fields = map[string]string{i18n.T(i18n.FieldControl): i18n.T(i18n.FieldAppWindow)}
 	}
 	g := contract.Grab{
 		Source:    contract.GrabSource{App: fg.Exe, Title: fg.Title},

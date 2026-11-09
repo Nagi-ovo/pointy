@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"html"
 	"runtime"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/pointylab/pointy/desktop/internal/agent"
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 )
 
 const (
@@ -200,24 +200,24 @@ func (u *UI) saveSettings(change func(*config.Settings)) {
 	}
 }
 
-func trayPlace() string {
+func trayTip() i18n.Key {
 	if runtime.GOOS == "darwin" {
-		return "菜单栏"
+		return i18n.WelcomeTrayMac
 	}
-	return "托盘"
+	return i18n.WelcomeTrayWin
 }
 
 // ShowWelcome says how to use Pointy, and offers the extension guide.
 func (u *UI) ShowWelcome() {
 	u.saveSettings(func(s *config.Settings) { s.Welcomed, s.WelcomedVersion = true, u.deps.Version })
 	choice := u.ask(contract.NoticeInit{
-		Title: "Pointy 已就位",
+		Title: i18n.Msg(i18n.WelcomeTitle),
 		Body: []contract.NoticeParagraph{
-			{Text: fmt.Sprintf("**晃一下鼠标**进入指认，指到网页、文档、聊天窗口里的任意内容，点一下就能问 %s。", agent.Name)},
-			{Text: trayPlace() + "里的鲸鱼图标可以调晃动灵敏度、开勿扰。"},
-			{Text: "在浏览器里用的话，推荐装上 Pointy 的浏览器扩展，能指认到网页里具体的段落。"},
+			{Text: i18n.Msg(i18n.WelcomeShake, "agent", agent.Name)},
+			{Text: i18n.Msg(trayTip())},
+			{Text: i18n.Msg(i18n.WelcomeExtension)},
 		},
-		Buttons: []contract.NoticeButton{{ID: "later", Label: "以后再说"}, {ID: "ext", Label: "安装浏览器扩展", Primary: true}},
+		Buttons: []contract.NoticeButton{{ID: "later", Label: i18n.Msg(i18n.WelcomeLater)}, {ID: "ext", Label: i18n.Msg(i18n.WelcomeInstall), Primary: true}},
 	})
 	if choice == "ext" {
 		u.ShowExtensionGuide()
@@ -228,13 +228,13 @@ func (u *UI) ShowWelcome() {
 func (u *UI) ShowExtensionGuide() {
 	u.deps.SyncExtension()
 	u.ask(contract.NoticeInit{
-		Title: "安装浏览器扩展（推荐）",
+		Title: i18n.Msg(i18n.GuideTitle),
 		Body: []contract.NoticeParagraph{
-			{Text: "装了扩展，在网页里能指认到具体的段落、图片，还能右键「问 Pointy」。没装也能用，只是网页按整窗截图处理。"},
-			{Text: "1. 在浏览器地址栏打开扩展页，打开右上角的「开发者模式」。", Copy: []string{"chrome://extensions", "edge://extensions"}},
-			{Text: "2. 点「加载已解压的扩展程序」，把这个路径粘贴到选文件夹窗口的地址栏，再点「选择文件夹」。", Copy: []string{u.deps.ExtensionDir()}},
-			{Text: "3. 装好后 Pointy 会弹窗问要不要让它连接，点「允许」就行。"},
+			{Text: i18n.Msg(i18n.GuideWhy)},
+			{Text: i18n.Msg(i18n.GuideStep1), Copy: []string{"chrome://extensions", "edge://extensions"}},
+			{Text: i18n.Msg(i18n.GuideStep2), Copy: []string{u.deps.ExtensionDir()}},
+			{Text: i18n.Msg(i18n.GuideStep3)},
 		},
-		Buttons: []contract.NoticeButton{{ID: "ok", Label: "知道了", Primary: true}},
+		Buttons: []contract.NoticeButton{{ID: "ok", Label: i18n.Msg(i18n.GuideOK), Primary: true}},
 	})
 }
