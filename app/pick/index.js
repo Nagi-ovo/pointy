@@ -4,6 +4,7 @@
 //   { source: { app, title }, method, text?, url?, pageTitle?, element?, image?, wideImage?, shotKind?, before?, after? }
 // onGrab(grab, release?)：release 撤掉指认后留在屏幕上的高亮框
 const { foreground, blockedReason, elevatedUnderCursor, grabSelection, BROWSERS } = require('./selection')
+const { accessHint } = require('../core/os')
 const { startShakeDetector } = require('./shake')
 const { pickNative } = require('./uipick')
 const { settings, TEST_HIDDEN, logError } = require('../core/env')
@@ -69,6 +70,9 @@ async function onShake(x, y) {
   const fg = foreground()
   // 密码管理器、终端这类不碰
   if (blockedReason(fg)) return
+  // macOS 没给辅助功能权限：读不到控件、拦不住点击，先请用户去授权
+  const needAccess = accessHint()
+  if (needAccess) return deps.showHint(needAccess)
   // 管理员程序：读不到控件、点击也拦不住，进了指认会卡住，直接提示
   if (elevatedUnderCursor()) return deps.showHint('这个程序以管理员身份运行，Pointy 读不到')
   // 浏览器里没走成扩展：记下原因（没连上 / 连着但没响应），后面的提示条和卡片都提一句

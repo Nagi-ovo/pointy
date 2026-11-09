@@ -1,0 +1,351 @@
+// Windows：全屏检测、前台窗口、模拟复制、指认期间的鼠标钩子和光标、UI Automation 小进程、卸载后清理。
+// 屏幕坐标一律是物理像素
+const koffi = require('koffi')
+const { screen } = require('electron')
+const { spawn } = require('node:child_process')
+const path = require('node:path')
+
+const shell32 = koffi.load('shell32.dll')
+const user32 = koffi.load('user32.dll')
+const kernel32 = koffi.load('kernel32.dll')
+const advapi32 = koffi.load('advapi32.dll')
+const RECT = koffi.struct('RECT', { left: 'int32', top: 'int32', right: 'int32', bottom: 'int32' })
+const MONITORINFO = koffi.struct('MONITORINFO', { cbSize: 'uint32', rcMonitor: RECT, rcWork: RECT, dwFlags: 'uint32' })
+const POINT = koffi.struct('POINT', { x: 'int32', y: 'int32' })
+const CURSORINFO = koffi.struct('CURSORINFO', { cbSize: 'uint32', flags: 'uint32', hCursor: 'intptr', ptScreenPos: POINT })
+
+const GetForegroundWindow = user32.func('void * __stdcall GetForegroundWindow()')
+const GetAsyncKeyState = user32.func('int16 __stdcall GetAsyncKeyState(int key)')
+const GetClassNameW = user32.func('int __stdcall GetClassNameW(void *hwnd, _Out_ uint16 *name, int max)')
+
+// ---------- 全屏 ----------
+const QUNS_RUNNING_D3D_FULL_SCREEN = 3
+const QUNS_PRESENTATION_MODE = 4
+// 桌面和任务栏本身也是"铺满屏幕的前台窗口"，不算全屏应用
+const SHELL_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd'])
+const MONITOR_DEFAULTTONEAREST = 2
+
+const SHQueryUserNotificationState = shell32.func('int32 __stdcall SHQueryUserNotificationState(_Out_ int32 *state)')
+const GetWindowRect = user32.func('bool __stdcall GetWindowRect(void *hwnd, _Out_ RECT *rect)')
+const MonitorFromWindow = user32.func('void * __stdcall MonitorFromWindow(void *hwnd, uint32 flags)')
+const GetMonitorInfoW = user32.func('bool __stdcall GetMonitorInfoW(void *monitor, _Inout_ MONITORINFO *info)')
+
+function notificationState() {
+  const out = [0]
+  return SHQueryUserNotificationState(out) === 0 ? out[0] : 0
+}
+
+function className(hwnd) {
+  const buf = Buffer.alloc(512)
+  const n = GetClassNameW(hwnd, buf, 256)
+  return buf.toString('utf16le', 0, n * 2)
+}
+
+/** 前台窗口是否盖满它所在的整块显示器（无边框全屏游戏常常不报 D3D 全屏状态） */
+function foregroundCoversMonitor(ownIds) {
+  const hwnd = GetForegroundWindow()
+  if (!hwnd) return false
+  const addr = koffi.address(hwnd)
+  if (ownIds.some(h => h === addr)) return false
+  if (SHELL_CLASSES.has(className(hwnd))) return false
+  const rect = {}
+  if (!GetWindowRect(hwnd, rect)) return false
+  const info = { cbSize: koffi.sizeof(MONITORINFO), rcMonitor: {}, rcWork: {}, dwFlags: 0 }
+  if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), info)) return false
+  const m = info.rcMonitor
+  return rect.left <= m.left && rect.top <= m.top && rect.right >= m.right && rect.bottom >= m.bottom
+}
+
+/** @param ownIds 本程序自己的窗口（windowId 的结果），自己不算 */
+function isFullscreenActive(ownIds = []) {
+  const state = notificationState()
+  if (state === QUNS_RUNNING_D3D_FULL_SCREEN || state === QUNS_PRESENTATION_MODE) return true
+  // QUNS_BUSY 不算数：它只说明"有个置顶窗口铺满了屏幕"，Claude 的 computer use 覆盖层、录屏工具的遮罩都会触发，
+  // 不一定是用户在看的东西。真正的全屏应用会是前台窗口，下面这条会抓到
+  return foregroundCoversMonitor(ownIds)
+}
+
+// ---------- 窗口 ----------
+/** 自己的窗口在系统里的编号（和 foregroundId 可比） */
+const windowId = (win) => win.getNativeWindowHandle().readBigUInt64LE(0)
+
+const foregroundId = () => {
+  const hwnd = GetForegroundWindow()
+  return hwnd ? koffi.address(hwnd) : 0n
+}
+
+// 让别的进程（这里是被 dsh:// 唤起的 DSH）能把自己提到前台；只有前台进程才有资格放行
+const AllowSetForegroundWindow = user32.func('bool __stdcall AllowSetForegroundWindow(uint32 pid)')
+const ASFW_ANY = 0xFFFFFFFF
+const allowAnyForeground = () => AllowSetForegroundWindow(ASFW_ANY)
+
+// 把卡片挂到来源程序下面当"被拥有的窗口"：Windows 保证它在那个程序之上，
+// 切到别的程序时跟着那个程序一起被盖住，回到那个程序时又跟着出来
+const SetWindowLongPtrW = user32.func('intptr __stdcall SetWindowLongPtrW(intptr hwnd, int index, intptr value)')
+const GA_ROOT = 2
+const GetAncestorPtr = user32.func('intptr __stdcall GetAncestor(intptr hwnd, uint32 flags)')
+const GWLP_HWNDPARENT = -8
+/** 挂上了返回 true；调用方没挂上就自己置顶 */
+function attachToOwner(win, owner) {
+  SetWindowLongPtrW(windowId(win), GWLP_HWNDPARENT, owner ? GetAncestorPtr(owner, GA_ROOT) : 0n)
+  return true
+}
+
+// 来源程序窗口的左上角（物理像素），窗口没了返回 undefined；卡片跟着它挪
+const GetWindowRectAt = user32.func('bool __stdcall GetWindowRect(intptr hwnd, _Out_ RECT *rect)')
+const IsWindow = user32.func('bool __stdcall IsWindow(intptr hwnd)')
+function windowOrigin(hwnd) {
+  const root = GetAncestorPtr(hwnd, GA_ROOT)
+  if (!root || !IsWindow(root)) return undefined
+  const r = {}
+  return GetWindowRectAt(root, r) ? { x: r.left, y: r.top } : undefined
+}
+
+// ---------- 坐标：物理像素 ↔ DIP ----------
+const cursor = () => {
+  const p = {}
+  return GetCursorPos(p) ? p : screen.dipToScreenPoint(screen.getCursorScreenPoint())
+}
+const toScreenPoint = (dip) => screen.dipToScreenPoint(dip)
+const toDipPoint = (p) => screen.screenToDipPoint(p)
+const toDipRect = (r) => screen.screenToDipRect(null, r)
+/** 屏幕坐标里一个 DIP 有几个单位（物理像素就是缩放比） */
+const unitsPerDip = (display) => display.scaleFactor
+
+// ---------- 鼠标、按键 ----------
+const GetCursorPos = user32.func('bool __stdcall GetCursorPos(_Out_ POINT *p)')
+const GetCursorInfo = user32.func('bool __stdcall GetCursorInfo(_Inout_ CURSORINFO *info)')
+const CURSOR_SHOWING = 1
+const VK_LBUTTON = 1
+const VK_RBUTTON = 2
+const VK_MBUTTON = 4
+
+function cursorVisible() {
+  const info = { cbSize: koffi.sizeof(CURSORINFO), flags: 0, hCursor: 0, ptScreenPos: { x: 0, y: 0 } }
+  return GetCursorInfo(info) && (info.flags & CURSOR_SHOWING) !== 0
+}
+
+const keyDown = (vk) => (GetAsyncKeyState(vk) & 0x8000) !== 0
+const buttonDown = () => [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON].some(keyDown)
+const rightButtonDown = () => keyDown(VK_RBUTTON)
+
+const VK_SHIFT = 0x10
+const VK_CONTROL = 0x11
+const VK_MENU = 0x12
+const VK_SPACE = 0x20
+const VK_LWIN = 0x5b
+const VK_RWIN = 0x5c
+/** 快捷键里的修饰键还按着（这时模拟的 Ctrl+C 会变成 Ctrl+Alt+C） */
+const modifiersDown = () => [VK_SHIFT, VK_CONTROL, VK_MENU, VK_SPACE, VK_LWIN, VK_RWIN].some(keyDown)
+
+// ---------- 前台程序 ----------
+const GetWindowTextW = user32.func('int __stdcall GetWindowTextW(void *hwnd, _Out_ uint16 *text, int max)')
+const GetWindowThreadProcessId = user32.func('uint32 __stdcall GetWindowThreadProcessId(void *hwnd, _Out_ uint32 *pid)')
+const OpenProcess = kernel32.func('void * __stdcall OpenProcess(uint32 access, bool inherit, uint32 pid)')
+const QueryFullProcessImageNameW = kernel32.func('bool __stdcall QueryFullProcessImageNameW(void *process, uint32 flags, _Out_ uint16 *name, _Inout_ uint32 *size)')
+const CloseHandle = kernel32.func('bool __stdcall CloseHandle(void *handle)')
+const WindowFromPoint = user32.func('void * __stdcall WindowFromPoint(POINT p)')
+const GetAncestor = user32.func('void * __stdcall GetAncestor(void *hwnd, uint32 flags)')
+const OpenProcessToken = advapi32.func('bool __stdcall OpenProcessToken(void *process, uint32 access, _Out_ void **token)')
+const GetTokenInformation = advapi32.func('bool __stdcall GetTokenInformation(void *token, int cls, _Out_ uint32 *info, uint32 len, _Out_ uint32 *ret)')
+const TOKEN_QUERY = 8
+const TokenElevation = 20
+const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+const utf16 = (buf, chars) => buf.toString('utf16le', 0, chars * 2)
+
+function processPath(pid) {
+  const handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+  if (!handle) return ''
+  try {
+    const buf = Buffer.alloc(2048)
+    const size = [1024]
+    return QueryFullProcessImageNameW(handle, 0, buf, size) ? utf16(buf, size[0]) : ''
+  } finally {
+    CloseHandle(handle)
+  }
+}
+
+/** 进程是不是以管理员身份运行（查不了就当不是） */
+function isElevated(pid) {
+  const handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+  if (!handle) return false
+  try {
+    const token = [null]
+    if (!OpenProcessToken(handle, TOKEN_QUERY, token)) return false
+    try {
+      const info = [0]
+      return GetTokenInformation(token[0], TokenElevation, info, 4, [0]) && info[0] !== 0
+    } finally {
+      CloseHandle(token[0])
+    }
+  } finally {
+    CloseHandle(handle)
+  }
+}
+
+/**
+ * 鼠标下面那个窗口是不是管理员程序。Pointy 是普通权限，Windows 不让它读管理员程序里的控件，
+ * 鼠标钩子在那上面也收不到点击（确认、取消都失效），所以这种窗口不进指认
+ */
+function elevatedUnderCursor() {
+  const pt = {}
+  if (!GetCursorPos(pt)) return false
+  const hwnd = WindowFromPoint(pt)
+  if (!hwnd) return false
+  const root = GetAncestor(hwnd, GA_ROOT) ?? hwnd
+  const pid = [0]
+  GetWindowThreadProcessId(root, pid)
+  return pid[0] ? isElevated(pid[0]) : false
+}
+
+/** 前台窗口：标题、进程名 */
+function foreground() {
+  const hwnd = GetForegroundWindow()
+  if (!hwnd) return { title: '', exe: '', exePath: '' }
+  const buf = Buffer.alloc(1024)
+  const title = utf16(buf, GetWindowTextW(hwnd, buf, 512))
+  const pid = [0]
+  GetWindowThreadProcessId(hwnd, pid)
+  const exePath = processPath(pid[0])
+  return { hwnd: koffi.address(hwnd), title, pid: pid[0], exePath, exe: path.basename(exePath).toLowerCase() }
+}
+
+const BROWSERS = new Set(['chrome.exe', 'msedge.exe', 'brave.exe', 'vivaldi.exe'])
+const browserKind = (exe) => (exe === 'msedge.exe' ? 'edge' : 'chrome')
+// 密码管理器、系统凭据框：碰都不碰
+const BLOCKED_APPS = new Set([
+  'keepass.exe', 'keepassxc.exe', '1password.exe', 'bitwarden.exe', 'lastpass.exe', 'enpass.exe', 'dashlane.exe',
+  'roboform.exe', 'credentialuibroker.exe', 'consent.exe', 'logonui.exe', 'lockapp.exe',
+])
+// 终端里 Ctrl+C 是中断；带内置终端的编辑器焦点可能就在终端里。这些程序只用 UI Automation，绝不模拟 Ctrl+C
+const NO_COPY_APPS = new Set([
+  'windowsterminal.exe', 'wezterm-gui.exe', 'cmd.exe', 'powershell.exe', 'pwsh.exe', 'conhost.exe', 'openconsole.exe',
+  'alacritty.exe', 'mintty.exe', 'wsl.exe', 'putty.exe', 'kitty.exe', 'tabby.exe', 'hyper.exe', 'warp.exe',
+  'code.exe', 'cursor.exe', 'antigravity.exe', 'windsurf.exe', 'idea64.exe', 'pycharm64.exe', 'webstorm64.exe',
+])
+
+// ---------- 模拟复制 ----------
+const keybd_event = user32.func('void __stdcall keybd_event(uint8 vk, uint8 scan, uint32 flags, uintptr extra)')
+const GetClipboardSequenceNumber = user32.func('uint32 __stdcall GetClipboardSequenceNumber()')
+const VK_C = 0x43
+const SC_CONTROL = 0x1d
+const SC_C = 0x2e
+const KEYEVENTF_KEYUP = 2
+
+const clipboardSeq = () => GetClipboardSequenceNumber()
+function sendCopy() {
+  // 带上扫描码：Chromium/Electron 程序（QQNT 等）对扫描码为 0 的模拟按键不一定认
+  keybd_event(VK_CONTROL, SC_CONTROL, 0, 0)
+  keybd_event(VK_C, SC_C, 0, 0)
+  keybd_event(VK_C, SC_C, KEYEVENTF_KEYUP, 0)
+  keybd_event(VK_CONTROL, SC_CONTROL, KEYEVENTF_KEYUP, 0)
+}
+
+// ---------- 指认期间：鼠标钩子、光标 ----------
+// 指认期间装一个低级鼠标钩子，把右键按下和抬起都吃掉：下面的程序完全收不到，也就不会弹它的右键菜单
+const LowLevelMouseProc = koffi.proto('intptr __stdcall LowLevelMouseProc(int nCode, uintptr wParam, void *lParam)')
+const SetWindowsHookExW = user32.func('intptr __stdcall SetWindowsHookExW(int idHook, LowLevelMouseProc *proc, intptr hmod, uint32 threadId)')
+const CallNextHookEx = user32.func('intptr __stdcall CallNextHookEx(intptr hhk, int nCode, uintptr wParam, void *lParam)')
+const UnhookWindowsHookEx = user32.func('int __stdcall UnhookWindowsHookEx(intptr hhk)')
+const GetModuleHandleW = kernel32.func('intptr __stdcall GetModuleHandleW(intptr name)')
+const WH_MOUSE_LL = 14
+const WM_RBUTTONDOWN = 0x0204
+const WM_RBUTTONUP = 0x0205
+const WM_LBUTTONDOWN = 0x0201
+const WM_LBUTTONUP = 0x0202
+const WM_MOUSEWHEEL = 0x020A
+
+/**
+ * 吃掉左右键：左键抬起 = 选中，右键抬起 = 取消；下面的程序都收不到。装不上返回 undefined（退回轮询 + 空格）
+ * wantWheel() 为真时滚轮也吃掉，交给 onWheel（+1 往上滚 / -1 往下滚）
+ */
+function hookButtons({ onLeftUp, onRightUp, onWheel, wantWheel }) {
+  let hook = 0
+  const proc = koffi.register((nCode, wParam, lParam) => {
+    const msg = Number(wParam)
+    if (nCode >= 0 && msg === WM_MOUSEWHEEL && wantWheel?.()) {
+      // MSLLHOOKSTRUCT.mouseData 在第 8 字节，高 16 位是滚动量
+      let delta = 0
+      try { delta = koffi.decode(lParam, 8, 'int32') >> 16 } catch {}
+      if (delta) setImmediate(() => onWheel(Math.sign(delta)))
+      return 1
+    }
+    if (nCode >= 0 && (msg === WM_RBUTTONDOWN || msg === WM_RBUTTONUP || msg === WM_LBUTTONDOWN || msg === WM_LBUTTONUP)) {
+      // 钩子里要马上返回，收尾放到下一轮
+      if (msg === WM_RBUTTONUP) setImmediate(onRightUp)
+      if (msg === WM_LBUTTONUP) setImmediate(onLeftUp)
+      return 1
+    }
+    return CallNextHookEx(0, nCode, wParam, lParam)
+  }, koffi.pointer(LowLevelMouseProc))
+  try {
+    hook = SetWindowsHookExW(WH_MOUSE_LL, proc, GetModuleHandleW(0), 0)
+  } catch {}
+  if (!hook) { koffi.unregister(proc); return undefined }
+  return () => { UnhookWindowsHookEx(hook); koffi.unregister(proc) }
+}
+
+// 指认期间把系统光标换成鲸鱼娘扒着箭头（箭头、文字 I 形、小手、十字都换，指到哪都是她）；
+// 结束时让系统从注册表重新加载用户自己的光标方案，不改注册表
+const LoadImageW = user32.func('intptr __stdcall LoadImageW(intptr hinst, const char16_t *name, uint32 type, int cx, int cy, uint32 flags)')
+const SetSystemCursor = user32.func('bool __stdcall SetSystemCursor(intptr hcur, uint32 id)')
+const SystemParametersInfoW = user32.func('bool __stdcall SystemParametersInfoW(uint32 action, uint32 param, intptr pv, uint32 winini)')
+const IMAGE_CURSOR = 2
+const LR_LOADFROMFILE = 0x10
+const SPI_SETCURSORS = 0x57
+const SWAPPED_CURSORS = [32512, 32513, 32649, 32515]
+const CURSOR_SIZES = [32, 48, 64]
+const CURSOR_DIR = path.join(__dirname, '..', '..', '..', 'assets', 'cursor')
+let cursorSwapped = false
+
+function swapCursor(scaleFactor) {
+  const want = 32 * scaleFactor
+  const size = CURSOR_SIZES.reduce((best, s) => (Math.abs(s - want) < Math.abs(best - want) ? s : best))
+  const file = path.join(CURSOR_DIR, `cursor-${size}.cur`)
+  try {
+    // SetSystemCursor 会接管并销毁传进去的句柄，所以每种光标单独加载一份
+    for (const id of SWAPPED_CURSORS) {
+      const h = LoadImageW(0, file, IMAGE_CURSOR, 0, 0, LR_LOADFROMFILE)
+      if (h) { SetSystemCursor(h, id); cursorSwapped = true }
+    }
+  } catch {}
+}
+
+/** 恢复用户自己的光标；force 用在启动时，防止上次崩溃留下鲸鱼娘光标 */
+function restoreCursor(force) {
+  if (!cursorSwapped && !force) return
+  try { SystemParametersInfoW(SPI_SETCURSORS, 0, 0, 0) } catch {}
+  cursorSwapped = false
+}
+
+// ---------- 读控件：常驻的 PowerShell 小进程（UI Automation），省掉每次 .NET 启动的时间 ----------
+const spawnA11yHelper = () => spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, '..', '..', 'pick', 'native', 'uia-selection.ps1')], { windowsHide: true })
+
+/** 读控件需要的系统权限：Windows 不用另外授权 */
+const accessHint = () => undefined
+
+/**
+ * Pointy 和它的子进程退干净（exe 和 koffi.node 解锁）后删掉 targets；最多等 30 秒
+ */
+function removeAfterExit(targets) {
+  const quote = (p) => `'${p.replace(/'/g, "''")}'`
+  const script = [
+    `$exe = ${quote(process.execPath)}`,
+    '$t0 = Get-Date',
+    'while ((Get-Process | Where-Object { $_.Path -eq $exe }) -and ((Get-Date) - $t0).TotalSeconds -lt 30) { Start-Sleep -Milliseconds 500 }',
+    ...targets.map((p) => `Remove-Item -LiteralPath ${quote(p)} -Recurse -Force -ErrorAction SilentlyContinue`),
+  ].join('\n')
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  // 经 cmd 的 start 起：直接 spawn 的控制台子进程会跟着 Pointy 退出被关掉（实测），start 出来的那个能活下来
+  spawn('cmd.exe', ['/d', '/c', 'start', '""', '/min', 'powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+}
+
+module.exports = {
+  isFullscreenActive, windowId, foregroundId, allowAnyForeground, attachToOwner, windowOrigin,
+  cursor, toScreenPoint, toDipPoint, toDipRect, unitsPerDip,
+  cursorVisible, buttonDown, rightButtonDown, modifiersDown,
+  foreground, elevatedUnderCursor, BROWSERS, browserKind, BLOCKED_APPS, NO_COPY_APPS,
+  clipboardSeq, sendCopy, hookButtons, swapCursor, restoreCursor,
+  spawnA11yHelper, accessHint, removeAfterExit,
+}

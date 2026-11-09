@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { APP_DIR, CAPTURE_DIR, TEST_HIDDEN, logError } = require('../core/env')
 const { suppressed, onVisibilityChange } = require('../core/state')
-const { foregroundAddress, setOwner, windowOrigin } = require('../core/win32')
+const os = require('../core/os')
 const agents = require('../agents')
 
 // 卡片本身 520 宽，四周各留 18px 给阴影；左边多留看板娘的位置，和 card.css 的 --card-left 对应（68 - 18）
@@ -45,7 +45,7 @@ function openCard(init, releasePick) {
   // 眼前这张卡片让位：问过问题的缩成胶囊，没问过的关掉；收起的卡片不动
   setAsideCard()
   // 卡片跟着叫出它的那个程序：在它上面，切到别的程序就被盖住（配对卡片和找不到来源时照旧置顶）
-  const fg = init.mode === 'pair' ? 0n : foregroundAddress()
+  const fg = init.mode === 'pair' ? 0n : os.foregroundId()
   const mine = ownHandles()
   const owner = fg && !mine.includes(fg) ? fg : 0n
   card = new BrowserWindow({
@@ -73,11 +73,11 @@ function openCard(init, releasePick) {
     self.releasePick?.()
     cards.delete(self)
   })
-  if (owner) {
-    try { setOwner(self.getNativeWindowHandle().readBigUInt64LE(0), owner); followOwner(self, owner) } catch (err) { logError('card-owner', err); self.setAlwaysOnTop(true, 'floating') }
-  } else {
-    card.setAlwaysOnTop(true, 'floating')
-  }
+  // macOS 挂不到别的程序下面：照旧置顶，但仍跟着来源窗口挪
+  let attached = false
+  try { attached = !!owner && os.attachToOwner(self, owner) } catch (err) { logError('card-owner', err) }
+  if (owner) followOwner(self, owner)
+  if (!attached) self.setAlwaysOnTop(true, 'floating')
   card.loadFile(path.join(APP_DIR, 'card', 'card.html'))
   card.webContents.once('did-finish-load', () => {
     card.webContents.send('card-init', init.mode === 'pair' ? init : { grab: init, agent: { name: agents.current().name } })
@@ -92,24 +92,24 @@ function openCard(init, releasePick) {
 
 /** 我们自己的窗口句柄（判断全屏、找卡片的来源窗口时排除掉） */
 function ownHandles() {
-  return [...cards].filter(w => !w.isDestroyed()).map(w => w.getNativeWindowHandle().readBigUInt64LE(0))
+  return [...cards].filter(w => !w.isDestroyed()).map(os.windowId)
 }
 
 /** 来源程序的窗口挪了，卡片跟着挪同样的距离（拖动卡片自己的位置不受影响，下次按新位置算） */
 // 每帧看一次，拖窗口时才跟得顺；位置自己记小数，不从 getBounds 读回来（150% 缩放下取整会抖）
 const FOLLOW_POLL_MS = 16
 function followOwner(c, owner) {
-  let last = windowOrigin(owner)
+  let last = os.windowOrigin(owner)
   if (!last) return
   let pos // 卡片左上角（DIP，小数）
   let placed // 上次我们放到的位置；用户自己拖了卡片就以那边为准
   const timer = setInterval(() => {
     if (c.isDestroyed()) return clearInterval(timer)
-    const now = windowOrigin(owner)
+    const now = os.windowOrigin(owner)
     if (!now) return clearInterval(timer)
     if (now.x === last.x && now.y === last.y) return
-    const a = screen.screenToDipPoint(last)
-    const b = screen.screenToDipPoint(now)
+    const a = os.toDipPoint(last)
+    const b = os.toDipPoint(now)
     last = now
     const dx = b.x - a.x
     const dy = b.y - a.y

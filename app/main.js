@@ -8,11 +8,9 @@
 const { app, globalShortcut } = require('electron')
 const { PORT, TEST_HIDDEN, logError } = require('./core/env')
 const state = require('./core/state')
-// koffi 的结构体名是全局的：先加载 win32，再 selection（SEL_POINT），再 shake（POINT），顺序别改
-const { isFullscreenActive } = require('./core/win32')
+const { isFullscreenActive, restoreCursor } = require('./core/os')
 const selection = require('./pick/selection')
 const pick = require('./pick')
-const { restoreCursor } = require('./pick/uipick')
 const extensions = require('./browser/extensions')
 const agents = require('./agents')
 const cards = require('./ui/cards')
@@ -42,6 +40,8 @@ if (process.env.POINTY_PORT) app.setPath('userData', `${app.getPath('userData')}
 if (!app.requestSingleInstanceLock()) app.exit(0)
 
 app.whenReady().then(() => {
+  // 只在菜单栏放图标，不占程序坞
+  app.dock?.hide()
   // 上次指认中途崩溃的话系统光标还是鲸鱼娘，启动时先恢复成用户自己的
   if (!TEST_HIDDEN) restoreCursor(true)
   if (!TEST_HIDDEN) extensions.syncUserExtension()

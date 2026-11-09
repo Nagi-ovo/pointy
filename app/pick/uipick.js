@@ -1,90 +1,10 @@
-// 普通程序里的指认：一层鼠标穿透的透明遮罩画高亮框，UI Automation 查光标下的控件。
-// 遮罩让鼠标穿过去（不然查到的是遮罩自己），点击靠指认期间的低级鼠标钩子接住：左键选中、右键退出；
+// 普通程序里的指认：一层鼠标穿透的透明遮罩画高亮框，读控件的小进程查光标下的控件。
+// 遮罩让鼠标穿过去（不然查到的是遮罩自己），点击靠指认期间的系统级拦截接住（core/os 的 hookButtons）：左键选中、右键退出；
 // 空格确认、Esc、[ ] 调范围这几个键只在指认期间注册，空格留着给钩子装不上时用。
 const { BrowserWindow, desktopCapturer, globalShortcut, screen } = require('electron')
-const koffi = require('koffi')
 const path = require('node:path')
 const { uiaRequest } = require('./selection')
-const { foregroundAddress, setOwner } = require('../core/win32')
-
-const user32 = koffi.load('user32.dll')
-const GetAsyncKeyState = user32.func('int16 __stdcall GetAsyncKeyState(int key)')
-const VK_RBUTTON = 2
-
-// 指认期间装一个低级鼠标钩子，把右键按下和抬起都吃掉：下面的程序完全收不到，也就不会弹它的右键菜单
-const LowLevelMouseProc = koffi.proto('intptr __stdcall LowLevelMouseProc(int nCode, uintptr wParam, void *lParam)')
-const SetWindowsHookExW = user32.func('intptr __stdcall SetWindowsHookExW(int idHook, LowLevelMouseProc *proc, intptr hmod, uint32 threadId)')
-const CallNextHookEx = user32.func('intptr __stdcall CallNextHookEx(intptr hhk, int nCode, uintptr wParam, void *lParam)')
-const UnhookWindowsHookEx = user32.func('int __stdcall UnhookWindowsHookEx(intptr hhk)')
-const GetModuleHandleW = koffi.load('kernel32.dll').func('intptr __stdcall GetModuleHandleW(intptr name)')
-const WH_MOUSE_LL = 14
-const WM_RBUTTONDOWN = 0x0204
-const WM_RBUTTONUP = 0x0205
-const WM_LBUTTONDOWN = 0x0201
-const WM_LBUTTONUP = 0x0202
-const WM_MOUSEWHEEL = 0x020A
-
-/**
- * 吃掉左右键：左键抬起 = 选中，右键抬起 = 取消；下面的程序都收不到。装不上返回 undefined（退回轮询 + 空格）
- * wantWheel() 为真时滚轮也吃掉，交给 onWheel（+1 往上滚 / -1 往下滚）
- */
-function hookButtons({ onLeftUp, onRightUp, onWheel, wantWheel }) {
-  let hook = 0
-  const proc = koffi.register((nCode, wParam, lParam) => {
-    const msg = Number(wParam)
-    if (nCode >= 0 && msg === WM_MOUSEWHEEL && wantWheel?.()) {
-      // MSLLHOOKSTRUCT.mouseData 在第 8 字节，高 16 位是滚动量
-      let delta = 0
-      try { delta = koffi.decode(lParam, 8, 'int32') >> 16 } catch {}
-      if (delta) setImmediate(() => onWheel(Math.sign(delta)))
-      return 1
-    }
-    if (nCode >= 0 && (msg === WM_RBUTTONDOWN || msg === WM_RBUTTONUP || msg === WM_LBUTTONDOWN || msg === WM_LBUTTONUP)) {
-      // 钩子里要马上返回，收尾放到下一轮
-      if (msg === WM_RBUTTONUP) setImmediate(onRightUp)
-      if (msg === WM_LBUTTONUP) setImmediate(onLeftUp)
-      return 1
-    }
-    return CallNextHookEx(0, nCode, wParam, lParam)
-  }, koffi.pointer(LowLevelMouseProc))
-  try {
-    hook = SetWindowsHookExW(WH_MOUSE_LL, proc, GetModuleHandleW(0), 0)
-  } catch {}
-  if (!hook) { koffi.unregister(proc); return undefined }
-  return () => { UnhookWindowsHookEx(hook); koffi.unregister(proc) }
-}
-
-// 指认期间把系统光标换成鲸鱼娘扒着箭头（箭头、文字 I 形、小手、十字都换，指到哪都是她）；
-// 结束时让系统从注册表重新加载用户自己的光标方案，不改注册表
-const LoadImageW = user32.func('intptr __stdcall LoadImageW(intptr hinst, const char16_t *name, uint32 type, int cx, int cy, uint32 flags)')
-const SetSystemCursor = user32.func('bool __stdcall SetSystemCursor(intptr hcur, uint32 id)')
-const SystemParametersInfoW = user32.func('bool __stdcall SystemParametersInfoW(uint32 action, uint32 param, intptr pv, uint32 winini)')
-const IMAGE_CURSOR = 2
-const LR_LOADFROMFILE = 0x10
-const SPI_SETCURSORS = 0x57
-const SWAPPED_CURSORS = [32512, 32513, 32649, 32515]
-const CURSOR_SIZES = [32, 48, 64]
-let cursorSwapped = false
-
-function swapCursor(scaleFactor) {
-  const want = 32 * scaleFactor
-  const size = CURSOR_SIZES.reduce((best, s) => (Math.abs(s - want) < Math.abs(best - want) ? s : best))
-  const file = path.join(__dirname, '..', '..', 'assets', 'cursor', `cursor-${size}.cur`)
-  try {
-    // SetSystemCursor 会接管并销毁传进去的句柄，所以每种光标单独加载一份
-    for (const id of SWAPPED_CURSORS) {
-      const h = LoadImageW(0, file, IMAGE_CURSOR, 0, 0, LR_LOADFROMFILE)
-      if (h) { SetSystemCursor(h, id); cursorSwapped = true }
-    }
-  } catch {}
-}
-
-/** 恢复用户自己的光标；force 用在启动时，防止上次崩溃留下鲸鱼娘光标 */
-function restoreCursor(force) {
-  if (!cursorSwapped && !force) return
-  try { SystemParametersInfoW(SPI_SETCURSORS, 0, 0, 0) } catch {}
-  cursorSwapped = false
-}
+const os = require('../core/os')
 
 const POLL_MS = 70
 const HOLD_MAX_MS = 5 * 60 * 1000
@@ -100,14 +20,18 @@ const CONTROL_LABEL = {
 
 const label = (c) => CONTROL_LABEL[c?.control] ?? '控件'
 
-/** 截一块屏幕区域（物理像素），返回 PNG data URL */
+/** 截一块屏幕区域（屏幕坐标），返回 JPEG data URL */
 async function captureRect(display, rect) {
   const scale = display.scaleFactor
   const size = { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }
+  // 截图按物理像素；rect 是屏幕坐标（Windows 已是物理像素，macOS 是点要乘缩放）
+  const k = scale / os.unitsPerDip(display)
+  rect = rect.map(v => Math.round(v * k))
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: size })
   const source = sources.find(s => String(s.display_id) === String(display.id)) ?? sources[0]
   if (!source) return undefined
-  const origin = screen.dipToScreenPoint({ x: display.bounds.x, y: display.bounds.y })
+  const o = os.toScreenPoint({ x: display.bounds.x, y: display.bounds.y })
+  const origin = { x: Math.round(o.x * k), y: Math.round(o.y * k) }
   const pad = 6
   const crop = {
     x: Math.max(0, rect[0] - origin.x - pad),
@@ -145,7 +69,7 @@ const FOCUS_H = 320
 const FOCUS_STEP = 1.15
 const FOCUS_MIN = 0.35
 const FOCUS_MAX = 4
-/** 鼠标为中心、不超出大框的小框（物理像素 [x, y, w, h]）；大框本来就不大时 undefined */
+/** 鼠标为中心、不超出大框的小框（屏幕坐标 [x, y, w, h]，scale 是每个 DIP 几个单位）；大框本来就不大时 undefined */
 function focusRect(rect, point, scale, zoom = 1) {
   if (rect[2] <= FOCUS_W * scale * 1.4 && rect[3] <= FOCUS_H * scale * 1.4) return undefined
   const w = Math.round(FOCUS_W * scale * zoom)
@@ -177,12 +101,12 @@ function pickNative({ note } = {}) {
   overlay.loadFile(path.join(__dirname, 'overlay', 'overlay.html'))
   overlay.once('ready-to-show', () => overlay.showInactive())
   if (note) overlay.webContents.once('did-finish-load', () => { if (!overlay.isDestroyed()) overlay.webContents.send('note', note) })
-  swapCursor(display.scaleFactor)
+  os.swapCursor(display.scaleFactor)
 
   let levelUp = 0
   let zoom = 1 // 虚线小框的缩放，滚轮调
   let chain = []
-  let point = screen.dipToScreenPoint(cursor)
+  let point = os.toScreenPoint(cursor)
   let busy = false
 
   return new Promise((resolve) => {
@@ -193,7 +117,7 @@ function pickNative({ note } = {}) {
       if (busy || overlay.isDestroyed()) return
       busy = true
       try {
-        point = screen.dipToScreenPoint(screen.getCursorScreenPoint())
+        point = os.toScreenPoint(screen.getCursorScreenPoint())
         const r = await uiaRequest(`point ${point.x} ${point.y}`, 1000)
         chain = (r?.chain ?? []).filter(c => c.rect && c.rect[2] > 4 && c.rect[3] > 4)
         // 只给最深那个控件标空壳（往上调范围的祖先都当普通控件）
@@ -214,10 +138,10 @@ function pickNative({ note } = {}) {
       drawn = key
       if (!c) return overlay.webContents.send('highlight', null)
       const toLocal = (r) => {
-        const dip = screen.screenToDipRect(null, { x: r[0], y: r[1], width: r[2], height: r[3] })
+        const dip = os.toDipRect({ x: r[0], y: r[1], width: r[2], height: r[3] })
         return { x: dip.x - display.bounds.x, y: dip.y - display.bounds.y, width: dip.width, height: dip.height }
       }
-      const f = c.opaque ? focusRect(c.rect, point, display.scaleFactor, zoom) : undefined
+      const f = c.opaque ? focusRect(c.rect, point, os.unitsPerDip(display), zoom) : undefined
       overlay.webContents.send('highlight', {
         ...toLocal(c.rect),
         label: `${label(c)}${c.name ? `：${c.name}` : ''}`,
@@ -228,15 +152,15 @@ function pickNative({ note } = {}) {
     // 左键选中、右键退出。优先用钩子把左右键整个吃掉；钩子装不上时退回老办法（空格选中）：
     // 看到右键按下就让遮罩接住鼠标（下面的程序已经收到按下，有的程序还是会弹菜单）
     // 有虚线小框时滚轮调它的大小（往上滚变大），指认期间本来就接管了鼠标
-    const focusShown = () => { const c = chain[Math.min(levelUp, chain.length - 1)]; return !!c?.opaque && !!focusRect(c.rect, point, display.scaleFactor) }
+    const focusShown = () => { const c = chain[Math.min(levelUp, chain.length - 1)]; return !!c?.opaque && !!focusRect(c.rect, point, os.unitsPerDip(display)) }
     const onWheel = (dir) => {
       zoom = Math.min(FOCUS_MAX, Math.max(FOCUS_MIN, zoom * (dir > 0 ? FOCUS_STEP : 1 / FOCUS_STEP)))
       draw()
     }
-    const unhook = hookButtons({ onLeftUp: () => finish(true), onRightUp: () => finish(false), onWheel, wantWheel: () => !finished && focusShown() })
+    const unhook = os.hookButtons({ onLeftUp: () => finish(true), onRightUp: () => finish(false), onWheel, wantWheel: () => !finished && focusShown() })
     let rightDown = false
     const rightPoll = unhook ? undefined : setInterval(() => {
-      const down = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) !== 0
+      const down = os.rightButtonDown()
       if (down && !rightDown) {
         rightDown = true
         if (!overlay.isDestroyed()) overlay.setIgnoreMouseEvents(false)
@@ -248,7 +172,7 @@ function pickNative({ note } = {}) {
     async function finish(confirm) {
       if (finished) return
       finished = true
-      restoreCursor()
+      os.restoreCursor()
       clearInterval(poll)
       clearInterval(rightPoll)
       unhook?.()
@@ -269,7 +193,7 @@ function pickNative({ note } = {}) {
       // 空壳程序（QQ、网易云）：截图只截跟着鼠标的小框，能读到元素的程序照旧截整块
       const whole = isWholeWindow({ rect: detail.rect, win: detail.win, control: detail.control })
       const opaque = isOpaque({ cls: detail.className, rect: detail.rect, kids: detail.kids, readable: detail.readable, win: detail.win, control: detail.control }) && (whole || !(detail.text ?? '').trim())
-      const focus = detail.rect && opaque ? focusRect(detail.rect, point, display.scaleFactor, zoom) : undefined
+      const focus = detail.rect && opaque ? focusRect(detail.rect, point, os.unitsPerDip(display), zoom) : undefined
       const image = detail.rect ? await captureRect(display, focus ?? detail.rect).catch(() => undefined) : undefined
       // 第二张：空壳程序是整个大框；能读到元素的程序是整个窗口，让模型看到周围还有什么（比如文件夹里别的文件）
       const wideRect = focus ? detail.rect : detail.win && detail.win.join(',') !== (detail.rect ?? []).join(',') ? detail.win : undefined
@@ -278,9 +202,11 @@ function pickNative({ note } = {}) {
         overlay.webContents.send('hold')
         // 和卡片一样挂到来源程序下面：在那个程序上面，别的程序切到前面就把它盖住；
         // 来源程序找不到时才退回置顶。后弹出的卡片挂在同一个程序下，会在它上面
-        const owner = foregroundAddress()
+        const owner = os.foregroundId()
         overlay.setAlwaysOnTop(false)
-        try { if (owner) setOwner(overlay.getNativeWindowHandle().readBigUInt64LE(0), owner); else overlay.setAlwaysOnTop(true, 'floating') } catch { overlay.setAlwaysOnTop(true, 'floating') }
+        let attached = false
+        try { attached = !!owner && os.attachToOwner(overlay, owner) } catch {}
+        if (!attached) overlay.setAlwaysOnTop(true, 'floating')
         overlay.setIgnoreMouseEvents(true)
         overlay.showInactive()
       }
@@ -313,4 +239,4 @@ function pickNative({ note } = {}) {
   })
 }
 
-module.exports = { pickNative, restoreCursor }
+module.exports = { pickNative }

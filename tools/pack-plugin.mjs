@@ -11,14 +11,20 @@ const plugin = path.join(root, 'plugin')
 const pet = path.join(plugin, 'pet')
 
 const electronVersion = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', 'electron', 'package.json'), 'utf8')).version
-const zip = `electron-v${electronVersion}-win32-x64.zip`
+// runtime.js 的 TARGETS 支持的平台，每个钉一个 zip 的校验和
+const targets = ['win32-x64', 'darwin-arm64', 'darwin-x64']
 // 校验和从 GitHub 官方发布页取，镜像下载下来的 zip 要和它一致
 const sums = await fetch(`https://github.com/electron/electron/releases/download/v${electronVersion}/SHASUMS256.txt`).then((r) => {
   if (!r.ok) throw new Error(`SHASUMS256.txt: HTTP ${r.status}`)
   return r.text()
 })
-const sha256 = sums.split('\n').map((l) => l.trim().split(/\s+\*?/)).find(([, name]) => name === zip)?.[0]
-if (!/^[0-9a-f]{64}$/.test(sha256 ?? '')) throw new Error(`no checksum for ${zip}`)
+const sumOf = new Map(sums.split('\n').map((l) => l.trim().split(/\s+\*?/).reverse()))
+const sha256 = Object.fromEntries(targets.map((target) => {
+  const zip = `electron-v${electronVersion}-${target}.zip`
+  const hex = sumOf.get(zip)
+  if (!/^[0-9a-f]{64}$/.test(hex ?? '')) throw new Error(`no checksum for ${zip}`)
+  return [target, hex]
+}))
 
 fs.rmSync(pet, { recursive: true, force: true })
 fs.mkdirSync(pet)
@@ -46,13 +52,28 @@ pngs.forEach((png, i) => {
   offset += png.length
 })
 fs.writeFileSync(path.join(pet, 'assets', 'pointy.ico'), Buffer.concat([header, ...pngs]))
+// Pointy.app 的图标：ICNS 也能直接装 PNG。icp5 = 32px，ic11 = 16@2x，ic12 = 32@2x（64px）。icp6 是 48px，不用。
+// 纯 JS 拼，打包可能在 Windows 上跑，没有 iconutil。
+const icnsEntries = [['icp5', pngs[0]], ['ic11', pngs[0]], ['ic12', pngs[1]]].map(([type, png]) => {
+  const head = Buffer.alloc(8)
+  head.write(type, 0, 'ascii')
+  head.writeUInt32BE(8 + png.length, 4)
+  return Buffer.concat([head, png])
+})
+const icnsHead = Buffer.alloc(8)
+icnsHead.write('icns', 0, 'ascii')
+icnsHead.writeUInt32BE(8 + icnsEntries.reduce((n, e) => n + e.length, 0), 4)
+fs.writeFileSync(path.join(pet, 'assets', 'pointy.icns'), Buffer.concat([icnsHead, ...icnsEntries]))
 // koffi 和 ws 直接放进包里（pet/vendor），插件就没有 npm 依赖：
 // pnpm 默认拦依赖的安装脚本（koffi 有一个），拦了 dsh plugin add 就报错。
-// koffi 只要 Windows x64 的预编译 .node，安装脚本本来也只是挑这个文件。
+// koffi 只要支持的平台的预编译 .node，安装脚本本来也只是挑其中一个。
 const vendor = path.join(pet, 'vendor')
 const nm = path.join(root, 'node_modules')
 for (const f of ['index.js', 'indirect.js', 'LICENSE.txt']) fs.cpSync(path.join(nm, 'koffi', f), path.join(vendor, 'koffi', f))
-fs.cpSync(path.join(nm, 'koffi', 'build', 'koffi', 'win32_x64'), path.join(vendor, 'koffi', 'build', 'koffi', 'win32_x64'), { recursive: true })
+for (const target of targets) {
+  const dir = target.replace('-', '_')
+  fs.cpSync(path.join(nm, 'koffi', 'build', 'koffi', dir), path.join(vendor, 'koffi', 'build', 'koffi', dir), { recursive: true })
+}
 const koffiPkg = JSON.parse(fs.readFileSync(path.join(nm, 'koffi', 'package.json'), 'utf8'))
 delete koffiPkg.scripts
 delete koffiPkg.devDependencies
@@ -83,5 +104,5 @@ fs.writeFileSync(path.join(plugin, 'README.md'), readme)
 const dist = path.join(root, 'dist')
 fs.mkdirSync(dist, { recursive: true })
 const out = execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--pack-destination', dist], { cwd: plugin, encoding: 'utf8', shell: process.platform === 'win32' })
-console.log(`Electron ${electronVersion} ${sha256}`)
+console.log(`Electron ${electronVersion}`, sha256)
 console.log(path.join(dist, out.trim().split('\n').pop()))

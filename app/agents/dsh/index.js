@@ -2,7 +2,7 @@
 // 跟 DSH 有关的事都在这个目录：消息格式、临时标题、工具名、怎么把 DSH 叫到前台、随 DSH 启停
 const { shell } = require('electron')
 const { logError } = require('../../core/env')
-const { allowAnyForeground } = require('../../core/win32')
+const { allowAnyForeground } = require('../../core/os')
 const { composeFirst, composeFollowUp, isOurPreamble } = require('../compose')
 const host = require('./host')
 

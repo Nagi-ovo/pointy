@@ -23,27 +23,27 @@ const MIRRORS = [
   'https://github.com/electron/electron/releases/download/',
 ]
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000
-/** electron.exe is renamed and rebranded so Task Manager shows "Pointy", not "Electron". */
-const EXE_NAME = 'Pointy.exe'
+const TARGET = `${process.platform}-${process.arch}`
 
-/** `{ version, sha256 }` of the Electron zip pinned by tools/pack-plugin.mjs, or undefined in a dev checkout. */
-export function pinnedRuntime() {
+/** `{ version, sha256 }` of this platform's Electron zip pinned by tools/pack-plugin.mjs, or undefined (dev checkout, unsupported platform). */
+export function pinnedRuntime(target = TARGET) {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(PET_APP_DIR, 'package.json'), 'utf8'))
     const { version, sha256 } = pkg.pointy?.electron ?? {}
-    if (typeof version === 'string' && /^[0-9a-f]{64}$/.test(sha256 ?? '')) return { version, sha256 }
+    const hex = sha256?.[target]
+    if (typeof version === 'string' && /^[0-9a-f]{64}$/.test(hex ?? '')) return { version, sha256: hex }
   } catch {}
   return undefined
 }
 
-const zipName = (version) => `electron-v${version}-win32-x64.zip`
-const runtimeDir = (version) => path.join(RUNTIME_DIR, `electron-v${version}-win32-x64`)
+const zipName = (version) => `electron-v${version}-${TARGET}.zip`
+const runtimeDir = (version) => path.join(RUNTIME_DIR, `electron-v${version}-${TARGET}`)
 
-/** electron.exe for the pinned version if it is already unpacked. */
+/** The executable of the pinned runtime if it is already unpacked: the branded one, else the stock fallback. */
 export function installedRuntime(pin = pinnedRuntime()) {
-  if (!pin) return undefined
-  const exe = path.join(runtimeDir(pin.version), EXE_NAME)
-  return fs.existsSync(exe) ? exe : undefined
+  const target = TARGETS[TARGET]
+  if (!pin || !target) return undefined
+  return target.exes.map((exe) => path.join(runtimeDir(pin.version), exe)).find((exe) => fs.existsSync(exe))
 }
 
 async function download(url, file, logger) {
@@ -70,13 +70,11 @@ async function download(url, file, logger) {
   return hash.digest('hex')
 }
 
-function unzip(zip, dir) {
-  // Windows 10+ ships bsdtar, which reads zip archives.
-  const tar = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
+function run(file, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(tar, ['-xf', zip, '-C', dir], { stdio: 'ignore', windowsHide: true })
+    const child = spawn(file, args, { stdio: 'ignore', windowsHide: true })
     child.on('error', reject)
-    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`tar exited with ${code}`))))
+    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${path.basename(file)} exited with ${code}`))))
   })
 }
 
@@ -87,9 +85,9 @@ function unzip(zip, dir) {
  * dropped; Windows does not check signatures of programs started by another
  * program. If the resource edit fails, the renamed stock binary still runs.
  */
-async function brand(dir, logger) {
+async function brandWindows(dir, zip, logger) {
   const from = path.join(dir, 'electron.exe')
-  const to = path.join(dir, EXE_NAME)
+  const to = path.join(dir, 'Pointy.exe')
   try {
     const ResEdit = await import('resedit')
     const exe = ResEdit.NtExecutable.from(fs.readFileSync(from), { ignoreCert: true })
@@ -103,7 +101,7 @@ async function brand(dir, logger) {
     }
     for (const vi of ResEdit.Resource.VersionInfo.fromEntries(res.entries)) {
       for (const lang of vi.getAllLanguagesForStringValues()) {
-        vi.setStringValues(lang, { FileDescription: 'Pointy', ProductName: 'Pointy', InternalName: 'Pointy', OriginalFilename: EXE_NAME })
+        vi.setStringValues(lang, { FileDescription: 'Pointy', ProductName: 'Pointy', InternalName: 'Pointy', OriginalFilename: 'Pointy.exe' })
       }
       vi.outputToResourceEntries(res.entries)
     }
@@ -117,22 +115,77 @@ async function brand(dir, logger) {
   }
 }
 
+const plist = (file, key, type, value) => run('/usr/bin/plutil', ['-replace', key, type, value, file])
+
+/**
+ * Turn Electron.app into Pointy.app: the Accessibility and Screen Recording
+ * prompts, Activity Monitor and the menu bar show the bundle's name and icon.
+ * Editing the bundle breaks Electron's signature, and Apple silicon refuses to
+ * run unsigned code, so the result is re-signed ad hoc. The zip comes from
+ * fetch, not a browser, so it carries no quarantine flag for Gatekeeper to check.
+ * If any step fails, the bundle is unpacked again and the stock Electron.app is used.
+ */
+async function brandMac(dir, zip, logger) {
+  const app = path.join(dir, 'Pointy.app')
+  const contents = path.join(app, 'Contents')
+  try {
+    fs.renameSync(path.join(dir, 'Electron.app'), app)
+    fs.renameSync(path.join(contents, 'MacOS', 'Electron'), path.join(contents, 'MacOS', 'Pointy'))
+    const info = path.join(contents, 'Info.plist')
+    for (const key of ['CFBundleExecutable', 'CFBundleName', 'CFBundleDisplayName']) await plist(info, key, '-string', 'Pointy')
+    await plist(info, 'CFBundleIdentifier', '-string', 'lab.pointy.app')
+    await plist(info, 'LSUIElement', '-bool', 'true')
+    const icns = path.join(PET_APP_DIR, 'assets', 'pointy.icns')
+    if (fs.existsSync(icns)) {
+      fs.copyFileSync(icns, path.join(contents, 'Resources', 'pointy.icns'))
+      await plist(info, 'CFBundleIconFile', '-string', 'pointy.icns')
+    }
+    await run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', app])
+  } catch (error) {
+    logger.warn(`pointy: could not rebrand Electron.app (${error.message}); using it as is`)
+    for (const name of fs.readdirSync(dir)) fs.rmSync(path.join(dir, name), { recursive: true, force: true })
+    await unzipMac(zip, dir)
+  }
+}
+
+// Windows 10+ ships bsdtar, which reads zip archives.
+const unzipWindows = (zip, dir) => run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', zip, '-C', dir])
+// ditto keeps the symlinks inside Electron Framework.framework, which a plain unzip would flatten.
+const unzipMac = (zip, dir) => run('/usr/bin/ditto', ['-x', '-k', zip, dir])
+
+/**
+ * Per platform: executables inside the runtime dir (branded first), the file
+ * that proves the zip unpacked, and how to unpack and brand it.
+ */
+const MAC = {
+  exes: ['Pointy.app/Contents/MacOS/Pointy', 'Electron.app/Contents/MacOS/Electron'],
+  stock: 'Electron.app/Contents/MacOS/Electron',
+  unzip: unzipMac,
+  brand: brandMac,
+}
+const TARGETS = {
+  'win32-x64': { exes: ['Pointy.exe'], stock: 'electron.exe', unzip: unzipWindows, brand: brandWindows },
+  'darwin-arm64': MAC,
+  'darwin-x64': MAC,
+}
+
 let installing
 /**
- * Make sure the pinned Electron is unpacked; returns the path of electron.exe.
+ * Make sure the pinned Electron is unpacked; returns the path of its executable.
  * One download at a time per DSH run; older runtimes are removed afterwards.
  */
 export function ensureRuntime(logger) {
+  const target = TARGETS[TARGET]
+  if (!target) return Promise.reject(new Error(`Pointy supports Windows x64 and macOS (arm64, x64), not ${TARGET}`))
   const pin = pinnedRuntime()
-  if (!pin) return Promise.reject(new Error(`no pinned Electron in ${PET_APP_DIR}`))
-  if (process.platform !== 'win32' || process.arch !== 'x64') return Promise.reject(new Error('Pointy only supports Windows x64'))
+  if (!pin) return Promise.reject(new Error(`no pinned Electron for ${TARGET} in ${PET_APP_DIR}`))
   const ready = installedRuntime(pin)
   if (ready) return Promise.resolve(ready)
-  installing ??= install(pin, logger).finally(() => { installing = undefined })
+  installing ??= install(pin, target, logger).finally(() => { installing = undefined })
   return installing
 }
 
-async function install(pin, logger) {
+async function install(pin, target, logger) {
   fs.mkdirSync(RUNTIME_DIR, { recursive: true })
   // Leftovers of a download that was cut off (DSH closed midway).
   for (const name of fs.readdirSync(RUNTIME_DIR)) {
@@ -160,9 +213,9 @@ async function install(pin, logger) {
     if (lastError) throw lastError
     const unpacked = path.join(tmp, 'unpacked')
     fs.mkdirSync(unpacked)
-    await unzip(zip, unpacked)
-    if (!fs.existsSync(path.join(unpacked, 'electron.exe'))) throw new Error('electron.exe missing from the zip')
-    await brand(unpacked, logger)
+    await target.unzip(zip, unpacked)
+    if (!fs.existsSync(path.join(unpacked, target.stock))) throw new Error(`${target.stock} missing from the zip`)
+    await target.brand(unpacked, zip, logger)
     const dest = runtimeDir(pin.version)
     fs.rmSync(dest, { recursive: true, force: true })
     fs.renameSync(unpacked, dest)
@@ -171,7 +224,7 @@ async function install(pin, logger) {
       const full = path.join(RUNTIME_DIR, name)
       if (full !== dest && /^electron-v/.test(name)) fs.rmSync(full, { recursive: true, force: true })
     }
-    return path.join(dest, EXE_NAME)
+    return installedRuntime(pin)
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
   }

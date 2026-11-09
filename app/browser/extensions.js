@@ -4,7 +4,7 @@ const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 const { HOME_DIR, ROOT_DIR, TEST_HIDDEN, logError } = require('../core/env')
-const { BROWSERS } = require('../pick/selection')
+const { BROWSERS, browserKind } = require('../core/os')
 
 // 配对过的浏览器扩展：id -> token
 const EXTENSIONS_FILE = path.join(HOME_DIR, 'extensions.json')
@@ -128,7 +128,7 @@ function onMessage(msg) {
 
 /** 前台程序（exe）对应的那个浏览器里的扩展；没有就随便一个 */
 function extensionFor(exe) {
-  const want = exe === 'msedge.exe' ? 'edge' : 'chrome'
+  const want = browserKind(exe)
   return [...extensions.values()].find(e => e.browser === want) ?? [...extensions.values()][0]
 }
 

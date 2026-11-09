@@ -4,6 +4,7 @@ const { app } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { HOME_DIR, ROOT_DIR, TEST_HIDDEN, logError } = require('../../core/env')
+const { removeAfterExit } = require('../../core/os')
 
 // 由 DSH 插件拉起（插件形态）：DSH 关了 Pointy 也跟着退
 const MANAGED = process.env.POINTY_MANAGED === '1'
@@ -56,7 +57,7 @@ function unlinked(everConnected) {
 
 // ---------- 插件被卸载后清理自己 ----------
 // DSH 卸载插件时（pnpm remove）删掉了包根目录的 package.json、src、lib，
-// pet/ 因为 Pointy 还开着、koffi.node 被占着删不干净。等 DSH 退出、Pointy 跟着退出时，看到包已经没了，
+// pet/ 因为 Pointy 还开着（Windows 上 koffi.node 被占着）删不干净。等 DSH 退出、Pointy 跟着退出时，看到包已经没了，
 // 就把运行时、设置和插件残留一起删掉。DSH 没开时用命令行卸载的话 Pointy 不在运行，这条路走不到。
 function pluginUninstalled() {
   // 只在确实是从 node_modules/@pointylab/dsh 里跑的时候才判断，开发版不碰
@@ -67,19 +68,7 @@ function pluginUninstalled() {
 function cleanUpAfterUninstall() {
   const targets = [HOME_DIR, app.getPath('userData'), PLUGIN_ROOT].filter((p) => fs.existsSync(p))
   logError('uninstall', `plugin removed; cleaning ${targets.join(', ')}`)
-  // Pointy 和它的子进程退干净（exe 和 koffi.node 解锁）后再删；最多等 30 秒
-  const quote = (p) => `'${p.replace(/'/g, "''")}'`
-  const script = [
-    `$exe = ${quote(process.execPath)}`,
-    '$t0 = Get-Date',
-    'while ((Get-Process | Where-Object { $_.Path -eq $exe }) -and ((Get-Date) - $t0).TotalSeconds -lt 30) { Start-Sleep -Milliseconds 500 }',
-    ...targets.map((p) => `Remove-Item -LiteralPath ${quote(p)} -Recurse -Force -ErrorAction SilentlyContinue`),
-  ].join('\n')
-  const encoded = Buffer.from(script, 'utf16le').toString('base64')
-  try {
-    // 经 cmd 的 start 起：直接 spawn 的控制台子进程会跟着 Pointy 退出被关掉（实测），start 出来的那个能活下来
-    require('node:child_process').spawn('cmd.exe', ['/d', '/c', 'start', '""', '/min', 'powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
-  } catch (err) { logError('uninstall', err) }
+  try { removeAfterExit(targets) } catch (err) { logError('uninstall', err) }
 }
 
 /** 退出时调：插件已经被卸载了就清理 */
