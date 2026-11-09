@@ -1,4 +1,5 @@
 /// <reference path="./bridge/runtime.d.ts" />
+/// <reference path="./protocol.d.ts" />
 
 type ScreenRect = [number, number, number, number]
 
@@ -14,74 +15,6 @@ type Grab = import('./bridge/mygo.ts').Grab & { mode?: undefined }
 
 interface PairCard { mode: 'pair'; code: string }
 type CardInit = PairCard | { mode?: undefined; grab: Grab; agent: { name: string } }
-
-interface CtxItem { label: string; text: string }
-interface Material {
-  site?: string
-  kind?: string
-  ctx: CtxItem[]
-  images: GrabImage[]
-  links: GrabLink[]
-  selection: string
-  shots: { image: boolean; wide: boolean; kind: 'focus' | 'element' }
-}
-type AnswerMode = 'quick' | 'deep'
-
-interface ModelChoice { provider: string; model: string; reasoningEffort?: string }
-interface ModelEffort { id: string; name: string }
-interface ModelEntry { provider: string; providerName?: string; model: string; name: string; efforts?: ModelEffort[]; defaultEffort?: string }
-interface SessionInfo {
-  sessionId: string
-  title?: string
-  updatedAt?: number
-  running?: boolean
-  workspace?: string
-  snippet?: string
-  model?: ModelChoice
-}
-interface Workspace { id: string; title: string }
-interface Suggestion { label: string; prompt: string }
-
-interface AskRequest {
-  type: 'ask'
-  askId: string
-  target: string
-  question: string
-  mode: AnswerMode
-  followUp: boolean
-  modeChanged: boolean
-  material?: Material
-  workspaceId?: string
-  model?: ModelChoice & { sessionOnly?: boolean }
-  images?: string[]
-}
-type CardRequest =
-  | { type: 'sessions-request'; reqId: string }
-  | { type: 'sessions-search'; reqId: string; query: string }
-  | { type: 'suggest-request'; reqId: string; material: Material }
-  | AskRequest
-
-interface SessionsReply {
-  items?: SessionInfo[]
-  activeRoot?: string
-  workspaces?: Workspace[]
-  defaultWorkspaceId?: string
-  models?: ModelEntry[]
-  defaultModel?: ModelChoice
-  model?: string
-  timeout?: boolean
-  offline?: boolean
-}
-type AgentEvent =
-  | ({ type: 'sessions'; reqId: string } & SessionsReply)
-  | { type: 'suggestions'; reqId: string; suggestions?: Suggestion[] }
-  | { type: 'title'; sessionId: string; title?: string }
-  | { type: 'ask-accepted'; askId: string; sessionId: string; title?: string }
-  | { type: 'ask-step'; askId: string }
-  | { type: 'ask-delta'; askId: string; text: string }
-  | { type: 'ask-activity'; askId: string; text: string }
-  | { type: 'ask-done'; askId: string; sessionId?: string; reason: string; title?: string }
-  | { type: 'ask-error'; askId: string; sessionId?: string; error: string }
 
 type PillState = import('./bridge/mygo.ts').PillState
 type KeepInfo = import('./bridge/mygo.ts').KeepInfo
