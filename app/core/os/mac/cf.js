@@ -95,5 +95,5 @@ const sendInt = (target, sel) => Number(msgInt(typeof target === 'string' ? objc
 module.exports = {
   koffi, CF, CG, AX, libSystem, CGPoint, CGSize, CGRect, CFRange, TYPE,
   constant, cfstr, isType, toString, toNumber, toArray, dictGet, CFRelease, CFBooleanGetValue, CFURLGetString,
-  send, sendInt, orderAbove,
+  send, sendInt, orderAbove, objc, objc_getClass, sel_registerName, msgPtr,
 }

@@ -3,7 +3,8 @@
 const { screen, systemPreferences } = require('electron')
 const { spawn } = require('node:child_process')
 const path = require('node:path')
-const { koffi, CF, CG, libSystem, CGRect, constant, toString, toNumber, toArray, dictGet, CFRelease, send, sendInt, orderAbove } = require('./mac/cf')
+const fs = require('node:fs')
+const { koffi, CF, CG, libSystem, CGRect, constant, cfstr, toString, toNumber, toArray, dictGet, CFRelease, send, sendInt, orderAbove, objc, objc_getClass, sel_registerName, msgPtr } = require('./mac/cf')
 
 // ---------- 窗口列表 ----------
 const CGWindowListCopyWindowInfo = CG.func('void *CGWindowListCopyWindowInfo(uint32 option, uint32 relativeTo)')
@@ -222,9 +223,41 @@ function hookButtons({ onLeftUp, onRightUp, onWheel, wantWheel }) {
   }
 }
 
-// Mac 不让普通程序换系统光标，指认期间光标照旧
-const swapCursor = () => {}
-const restoreCursor = () => {}
+// 指认期间光标换成鲸鱼娘。后台程序本来不能设光标，要先打开窗口服务器的 SetsCursorInBackground（私有接口，
+// 拿不到就照旧用系统光标）；鼠标下面的程序移动时会把光标设回自己的，所以每 16ms 再设一次（实测 99% 的时间是鲸鱼娘）
+const CURSOR_PT = 32
+const CURSOR_DIR = path.join(__dirname, '..', '..', '..', 'assets', 'cursor')
+const CURSOR_RESET_MS = 16
+const msgCursor = objc.func('void *objc_msgSend(void *self, void *sel, void *image, CGPoint hotSpot)')
+const msgObj = objc.func('void *objc_msgSend(void *self, void *sel, void *arg)')
+const msgSize = objc.func('void objc_msgSend(void *self, void *sel, CGSize size)')
+let whale
+let cursorTimer
+
+function whaleCursor() {
+  const conn = CG.func('int32 _CGSDefaultConnection()')()
+  CG.func('int32 CGSSetConnectionProperty(int32 a, int32 b, void *key, void *value)')(conn, conn, cfstr('SetsCursorInBackground'), constant('kCFBooleanTrue'))
+  const alloc = (name) => msgPtr(objc_getClass(name), sel_registerName('alloc'))
+  const image = msgObj(alloc('NSImage'), sel_registerName('initWithContentsOfFile:'), cfstr(path.join(CURSOR_DIR, 'cursor-64.png')))
+  msgSize(image, sel_registerName('setSize:'), { width: CURSOR_PT, height: CURSOR_PT })
+  // 热点和 Windows 用的同一个：cursor-32.cur 文件头里记着
+  const cur = fs.readFileSync(path.join(CURSOR_DIR, `cursor-${CURSOR_PT}.cur`))
+  return msgCursor(alloc('NSCursor'), sel_registerName('initWithImage:hotSpot:'), image, { x: cur.readUInt16LE(10), y: cur.readUInt16LE(12) })
+}
+
+function swapCursor() {
+  try { whale ??= whaleCursor() } catch { return }
+  const set = sel_registerName('set')
+  clearInterval(cursorTimer)
+  cursorTimer = setInterval(() => msgPtr(whale, set), CURSOR_RESET_MS)
+}
+
+function restoreCursor() {
+  if (!cursorTimer) return
+  clearInterval(cursorTimer)
+  cursorTimer = undefined
+  msgPtr(msgPtr(objc_getClass('NSCursor'), sel_registerName('arrowCursor')), sel_registerName('set'))
+}
 
 // ---------- 读控件：常驻的小进程（ax-helper.js），用 Pointy 自己的 Electron 当 Node 跑 ----------
 const spawnA11yHelper = () => spawn(process.execPath, [path.join(__dirname, '..', '..', 'pick', 'native', 'ax-helper.js')], {
