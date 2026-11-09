@@ -159,16 +159,16 @@ ipcMain.on('card-open-agent', (e, sessionId) => {
   BrowserWindow.fromWebContents(e.sender)?.close()
   agents.current().open(sessionId)
 })
-// 只认 http(s) 和本机绝对路径；本机文件只在资源管理器里定位，不直接运行
+// 只认 http(s) 和本机绝对路径；本机文件只在资源管理器 / 访达里定位，不直接运行
 ipcMain.on('card-open-link', (_e, href) => {
   const s = String(href ?? '')
   if (/^https?:\/\//i.test(s)) shell.openExternal(s)
-  else if (/^[a-z]:[\\/]/i.test(s) && fs.existsSync(s)) shell.showItemInFolder(s)
+  else if (path.isAbsolute(s) && fs.existsSync(s)) shell.showItemInFolder(s)
 })
 // 回答里的本机图片：用系统默认的看图程序打开（只认图片文件）
 ipcMain.on('card-open-image', (_e, file) => {
   const s = String(file ?? '')
-  if (/^[a-z]:[\\/]/i.test(s) && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(s) && fs.existsSync(s)) shell.openPath(s)
+  if (path.isAbsolute(s) && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(s) && fs.existsSync(s)) shell.openPath(s)
 })
 // 卡片上「装扩展」：打开装浏览器扩展的引导卡（notices 不依赖这里，按需取）
 ipcMain.on('card-extension-guide', () => require('./notices').showExtensionGuide())

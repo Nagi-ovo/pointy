@@ -6,10 +6,14 @@ const escapeHtml = (s) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;'
 // [文字](链接) 或 [文字](<带空格的路径>)，在转义之后的文本上匹配
 const LINK = /\[([^\]\n]+)\]\((?:&lt;([^\n]+?)&gt;|([^)\s]+))\)/g
 
+// 本机绝对路径：Windows 的 C:\…，macOS 的 /Users/…（// 开头的是省略协议的网址，不算）
+const WINDOWS_PATH = /^[a-z]:[\\/]/i
+const isLocalPath = (p) => WINDOWS_PATH.test(p) || /^\/(?!\/)/.test(p)
+
 function linkTarget(raw) {
   const href = raw.replace(/&amp;/g, '&')
   if (/^https?:\/\//i.test(href)) return href
-  if (/^[a-z]:[\\/]/i.test(href)) return href
+  if (isLocalPath(href)) return href
   return undefined
 }
 
@@ -20,12 +24,13 @@ const IMAGE_FILE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i
 function localImage(raw) {
   let path = raw.replace(/&amp;/g, '&')
   if (/^file:\/\/\//i.test(path)) {
-    try { path = decodeURI(path.slice(8)) } catch { return undefined }
+    try { path = decodeURI(path.slice(7)) } catch { return undefined }
+    if (/^\/[a-z]:/i.test(path)) path = path.slice(1)
   }
-  if (!/^[a-z]:[\\/]/i.test(path) || !IMAGE_FILE.test(path)) return undefined
-  return path.replace(/\//g, '\\')
+  if (!isLocalPath(path) || !IMAGE_FILE.test(path)) return undefined
+  return WINDOWS_PATH.test(path) ? path.replace(/\//g, '\\') : path
 }
-const fileUrl = (path) => `file:///${encodeURI(path.replace(/\\/g, '/')).replace(/#/g, '%23').replace(/\?/g, '%3F')}`
+const fileUrl = (path) => `file://${WINDOWS_PATH.test(path) ? '/' : ''}${encodeURI(path.replace(/\\/g, '/')).replace(/#/g, '%23').replace(/\?/g, '%3F')}`
 const attr = (v) => v.replace(/&(?!amp;|lt;|gt;|quot;)/g, '&amp;').replace(/"/g, '&quot;')
 
 function inline(text) {
