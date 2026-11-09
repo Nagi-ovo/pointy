@@ -38,7 +38,7 @@ func (Unsupported) Blocked(string) bool                        { return false }
 func (Unsupported) HookButtons() (ButtonHook, error)           { return nil, errors.ErrUnsupported }
 func (Unsupported) SwapCursor() error                          { return errors.ErrUnsupported }
 func (Unsupported) RestoreCursor()                             {}
-func (Unsupported) Capture(Rect) (image.Image, error)          { return nil, errors.ErrUnsupported }
+func (Unsupported) PrewarmCapture()                            {}
 
 func (Unsupported) RectToDIP(r Rect) mygo.Rectangle {
 	return mygo.Rectangle{X: r[0], Y: r[1], Width: r[2], Height: r[3]}
@@ -54,4 +54,8 @@ func (Unsupported) PointAt(context.Context, Point) (PointReply, error) {
 
 func (Unsupported) ElementAt(context.Context, Point, int) (ElementReply, error) {
 	return ElementReply{}, errors.ErrUnsupported
+}
+
+func (Unsupported) Capture(context.Context, Rect, int) (image.Image, error) {
+	return nil, errors.ErrUnsupported
 }

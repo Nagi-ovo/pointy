@@ -58,4 +58,7 @@ type ElementReply struct {
 	Win        *Rect  `json:"win"`
 	Text       string `json:"text,omitzero"`
 	Href       string `json:"href,omitzero"`
+	// PID is the process that shows the control, whose window Capture
+	// takes.
+	PID int `json:"pid,omitzero"`
 }
