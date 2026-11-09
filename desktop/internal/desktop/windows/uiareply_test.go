@@ -110,9 +110,9 @@ func TestPointReplyShape(t *testing.T) {
 }
 
 func TestElementReply(t *testing.T) {
-	link := control{typeID: typeHyperlink, name: "Docs", rect: &desktop.Rect{1, 2, 3, 4}}
+	link := control{typeID: typeHyperlink, name: "Docs", rect: &desktop.Rect{1, 2, 3, 4}, pid: 4242}
 	got := elementReply(link, false, true, nil, "  Docs \n", "https://example.com/docs")
-	if !got.OK || got.Text != "Docs" || got.Href != "https://example.com/docs" || got.Control != "ControlType.Hyperlink" {
+	if !got.OK || got.Text != "Docs" || got.Href != "https://example.com/docs" || got.Control != "ControlType.Hyperlink" || got.PID != 4242 {
 		t.Errorf("link reply %+v", got)
 	}
 	if got := elementReply(link, false, true, nil, "Docs", "javascript:void(0)"); got.Href != "" {
@@ -124,7 +124,7 @@ func TestElementReply(t *testing.T) {
 	if got := elementReply(control{typeID: 50030}, false, true, nil, strings.Repeat("字", maxText+5), ""); len([]rune(got.Text)) != maxText {
 		t.Errorf("long text kept %d characters", len([]rune(got.Text)))
 	}
-	pw := elementReply(control{typeID: 50004, name: "Password", password: true}, false, true, nil, "hunter2", "")
+	pw := elementReply(control{typeID: 50004, name: "Password", password: true, pid: 4242}, false, true, nil, "hunter2", "")
 	if pw != (desktop.ElementReply{IsPassword: true}) {
 		t.Errorf("a password field answers %+v", pw)
 	}
