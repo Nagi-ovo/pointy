@@ -556,6 +556,25 @@ const gripEnd = (e: PointerEvent) => { if (grip.hasPointerCapture(e.pointerId)) 
 grip.addEventListener('pointerup', gripEnd)
 grip.addEventListener('pointercancel', gripEnd)
 
+const toLatest = $('to-latest')
+let stick = true
+// scrollTop when last pinned: a smaller one means the user scrolled up, not that content grew.
+let pinnedAt = 0
+const gapBelow = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight
+function pin() {
+  if (stick) { thread.scrollTop = thread.scrollHeight; pinnedAt = thread.scrollTop }
+  toLatest.hidden = gapBelow() < 32
+}
+const threadSize = new ResizeObserver(pin)
+threadSize.observe(thread)
+new MutationObserver((records) => { for (const r of records) for (const n of r.addedNodes) if (n instanceof Element) threadSize.observe(n) }).observe(thread, { childList: true })
+thread.addEventListener('scroll', () => {
+  const atBottom = gapBelow() < 32
+  if (atBottom) { stick = true; pinnedAt = thread.scrollTop } else if (thread.scrollTop < pinnedAt) stick = false
+  toLatest.hidden = atBottom
+})
+toLatest.addEventListener('click', () => { stick = true; pin() })
+
 function addTurn(youText: string) {
   thread.hidden = false
   thread.append(Object.assign(document.createElement('div'), { className: 'you', textContent: youText }))
@@ -563,7 +582,8 @@ function addTurn(youText: string) {
   thread.append(el)
   thread.append(activity)
   reply = { el, text: '' }
-  thread.scrollTop = thread.scrollHeight
+  stick = true
+  pin()
 }
 
 async function send(instruction: string, label?: string) {
@@ -707,9 +727,7 @@ function keyLinks(text: string) {
 }
 
 function renderReply() {
-  const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 32
   reply!.el.innerHTML = renderMarkdown(reply!.text)
-  if (atBottom) thread.scrollTop = thread.scrollHeight
 }
 
 const openInAgent = () => window.card.openAgent(sessionId ?? (targetValue !== 'new' ? targetValue : undefined))
@@ -857,7 +875,10 @@ window.card.onAgent((msg) => {
       activity.hidden = msg.reason === 'completed'
       if (msg.reason !== 'completed') activity.textContent = `结束（${msg.reason}）`
       if (reply?.text) addAfterLinks(progressFull ? keyLinks(reply.text) : [])
-      if (progressFull && reply?.el && reply.text.length > 400) thread.scrollTop = Math.max(0, reply.el.offsetTop - thread.offsetTop - 8)
+      if (progressFull && reply?.el && reply.text.length > 400) {
+        stick = false
+        thread.scrollTop = Math.max(0, reply.el.offsetTop - thread.offsetTop - 8)
+      }
       allText += '\n\n'
       fitHeight()
       window.card.rendered('answered')
