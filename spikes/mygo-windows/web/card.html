@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}
+/* Geometry is measured by the Go side: window 360x240, card inset 24, radius 20. */
+.card{position:absolute;left:24px;top:24px;width:312px;height:192px;border-radius:20px;background:rgb(30,80,200);
+  color:#fff;font:600 15px "Segoe UI","Microsoft YaHei",-apple-system,sans-serif;padding:14px 16px;box-sizing:border-box}
+.half{position:absolute;left:150px;top:222px;width:60px;height:12px;background:rgba(255,0,0,.5)}
+</style></head><body><div class="card" id="c"></div><div class="half"></div>
+<script>document.getElementById('c').textContent = new URLSearchParams(location.search).get('label') || 'card'</script>
+</body></html>

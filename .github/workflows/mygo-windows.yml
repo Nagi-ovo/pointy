@@ -1,0 +1,43 @@
+name: mygo Windows spike
+
+on:
+  pull_request:
+    paths:
+      - spikes/mygo-windows/**
+      - .github/workflows/mygo-windows.yml
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: spikes/mygo-windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: spikes/mygo-windows/go.mod
+          cache-dependency-path: spikes/mygo-windows/go.sum
+      - name: Build x64 and arm64
+        shell: pwsh
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go build -trimpath -ldflags "-s -w -H windowsgui" -o out/pointy-mygo-test.exe .
+          $env:GOARCH = 'arm64'
+          go build -trimpath -ldflags "-s -w -H windowsgui" -o out/pointy-mygo-test-arm64.exe .
+          Copy-Item 测试步骤.txt out/
+      - name: Run on this runner
+        shell: pwsh
+        env:
+          POINTY_CI: '1'
+        run: |
+          $p = Start-Process out/pointy-mygo-test.exe -PassThru
+          if (-not $p.WaitForExit(200000)) { $p.Kill(); Write-Host 'timed out' }
+          Get-Content out/pointy-mygo-result.txt -ErrorAction Continue
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pointy-mygo-windows-test
+          path: spikes/mygo-windows/out/
