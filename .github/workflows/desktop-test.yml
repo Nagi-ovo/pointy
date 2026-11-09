@@ -39,7 +39,7 @@ jobs:
           go build -trimpath -ldflags "-H windowsgui" -o out/Pointy.exe .
           $env:GOARCH = 'arm64'
           go build -trimpath -ldflags "-H windowsgui" -o out/Pointy-arm64.exe .
-      - name: Self-check against Notepad
+      - name: Self-check and one pick against Notepad
         run: |
           $out = Join-Path $PWD 'out/selfcheck.txt'
           $text = 'Pointy self-check reads this line through UI Automation.'
@@ -71,6 +71,11 @@ jobs:
             }
           }
           Stop-Process -Id $notepad.Id -ErrorAction SilentlyContinue
+          foreach ($check in 'pick opens a card', "the pick's picture leaves the overlay out") {
+            if (-not (Select-String -LiteralPath $out -Pattern "^PASS $([regex]::Escape($check)):" -Quiet)) {
+              Add-Content -LiteralPath $out "FAIL ${check}: did not pass"
+            }
+          }
 
           Get-Content -LiteralPath $out
           if ($pointy.ExitCode -ne 0 -or (Select-String -LiteralPath $out -Pattern '^FAIL' -Quiet)) { exit 1 }
