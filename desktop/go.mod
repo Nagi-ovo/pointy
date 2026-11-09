@@ -6,11 +6,11 @@ tool github.com/egoist/mygo/cmd/mygo
 
 require (
 	github.com/coder/websocket v1.8.15
+	github.com/ebitengine/purego v0.11.1
 	github.com/egoist/mygo v0.8.3
 )
 
 require (
-	github.com/ebitengine/purego v0.11.1 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )

@@ -1,0 +1,9 @@
+{
+  "source": { "app": "TextEdit", "title": "pointy-fixture.txt" },
+  "method": "uia-pick",
+  "text": "Pointy lets you shake the mouse, point at anything on screen, and ask DeepSeek Harness about it. The card opens next to what you pointed at and streams the answer.",
+  "element": {
+    "kind": "paragraph",
+    "text": "Pointy lets you shake the mouse, point at anything on screen, and ask DeepSeek Harness about it. The card opens next to what you pointed at and streams the answer."
+  }
+}

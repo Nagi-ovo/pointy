@@ -79,7 +79,7 @@ html, body {
   width: var(--mascot-w);
   height: var(--mascot-h);
   z-index: 2;
-  -webkit-app-region: drag;
+  -webkit-app-region: drag; --app-region: drag;
   animation: peek 420ms 140ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
 }
 #mascot img {
@@ -111,7 +111,7 @@ button:focus-visible { outline: 2px solid var(--blue-line); outline-offset: 1px;
 #card > #thread { flex: 0 1 auto; }
 #card.manual > #thread { flex: 1 1 auto; }
 
-header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag; }
+header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag; --app-region: drag; }
 .spacer { flex: 1; }
 #status { display: none; }
 #title { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text); font-size: 14px; font-weight: 600; }
@@ -120,7 +120,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 #source { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); font-size: 12.5px; }
 #target-row { display: flex; align-items: center; gap: 4px; margin: 8px 0 0 -6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); min-width: 0; }
 
-#target-wrap { -webkit-app-region: no-drag; position: relative; min-width: 0; }
+#target-wrap { -webkit-app-region: no-drag; --app-region: no-drag; position: relative; min-width: 0; }
 #target {
   display: inline-flex; align-items: center; gap: 4px;
   max-width: 270px;
@@ -185,7 +185,7 @@ header { display: flex; align-items: center; gap: 8px; -webkit-app-region: drag;
 .ws-list { margin-left: 22px; }
 
 .icon {
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag; --app-region: no-drag;
   width: 26px; height: 26px;
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: 6px; background: transparent; cursor: pointer; color: var(--muted);
