@@ -14,6 +14,7 @@ import (
 
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
+	"github.com/pointylab/pointy/desktop/internal/desktop"
 	"github.com/pointylab/pointy/desktop/internal/server"
 )
 
@@ -141,6 +142,9 @@ func (h *handler) OnMessage(m server.Message) {
 		return
 	}
 	g := sel.Grab
+	if g.Blocked != "" || desktop.LoginTitle(g.PageTitle) {
+		return
+	}
 	g.Source = contract.GrabSource{App: cmp.Or(sel.Browser, "browser"), Title: g.PageTitle}
 	g.Method = contract.MethodExtension
 	h.e.deps.OnSelection(g)
