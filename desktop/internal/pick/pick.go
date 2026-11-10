@@ -198,6 +198,9 @@ func (p *Picker) Pick(at desktop.Point) {
 				p.d.OpenGrab(g, releaseOnly(r.Release))
 				return
 			case browser.PickCancelled:
+				if r.Blocked != "" {
+					p.refuse(r.Blocked)
+				}
 				return
 			}
 			f = noResponse

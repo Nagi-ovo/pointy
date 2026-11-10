@@ -15,7 +15,7 @@ interface PickedElement {
   viewport: { width: number, height: number, dpr: number }
 }
 
-type PickResultMessage = { type: 'pick-result', result: PickedElement, cancelled?: undefined } | { type: 'pick-result', cancelled: true, result?: undefined }
+type PickResultMessage = { type: 'pick-result', result: PickedElement, cancelled?: undefined } | { type: 'pick-result', cancelled: true, result?: undefined, blocked?: 'password-field' }
 
 type PickControlMessage = { type: 'pick-abort' } | { type: 'pick-hold', reqId: string } | { type: 'pick-release', reqId: string }
 

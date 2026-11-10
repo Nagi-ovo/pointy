@@ -196,6 +196,16 @@
     }
   }
 
+  const isPassword = (el: Element | null | undefined) => el?.tagName === 'INPUT' && (el as HTMLInputElement).type === 'password'
+  let focused = document.activeElement
+  while (focused?.shadowRoot?.activeElement) focused = focused.shadowRoot.activeElement
+  // Chrome 把密码框里选中的字当成"••••"放进选区，不能拿它开卡片
+  if (isPassword(focused)) {
+    chrome.runtime.sendMessage<PickResultMessage>({ type: 'pick-result', cancelled: true, blocked: 'password-field' })
+    window.__pointyPick = false
+    return
+  }
+
   const existing = getSelection()?.toString().trim()
   if (existing) {
     const range = getSelection()!.getRangeAt(0)
@@ -331,6 +341,7 @@
     const el = current()
     cleanup(!!el)
     if (!el) return chrome.runtime.sendMessage<PickResultMessage>({ type: 'pick-result', cancelled: true })
+    if (isPassword(el)) { box.remove(); return chrome.runtime.sendMessage<PickResultMessage>({ type: 'pick-result', cancelled: true, blocked: 'password-field' }) }
     const result = describe(el)
     // 高亮框先藏起来，等两帧再让扩展截图，免得截进去；截完扩展会发 pick-hold 让它回来
     box.style.transition = 'none'
