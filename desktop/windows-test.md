@@ -1,6 +1,6 @@
 # Windows 测试清单（Go 版 Pointy）
 
-这个分支把 Electron 版的 Windows 平台层（`app/core/os/win32.ts`、`app/pick/native/uia-selection.ps1`）移植到了 Go，代码在 `desktop/internal/desktop/windows/`。它接在 macOS 那条线后面，抖动指认的整套流程（`desktop/internal/pick`）是两边共用的，所以现在 Windows 上已经能「抖一下、指一下、出卡片、提问」。
+这个分支把 Electron 版的 Windows 平台层移植到了 Go，代码在 `desktop/internal/desktop/windows/`，Electron 版随之删除。DSH 插件现在自带 Go 版的 Pointy.exe（x64 和 arm64）。它接在 macOS 那条线后面，抖动指认的整套流程（`desktop/internal/pick`）是两边共用的，所以现在 Windows 上已经能「抖一下、指一下、出卡片、提问」。
 
 写的时候手边没有 Windows 机器：只在 macOS 上交叉编译了 amd64 和 arm64，跑了不依赖系统的单测。下面每一项都没在真机上跑过，都要过一遍。
 
@@ -43,15 +43,17 @@ Get-Content out\selfcheck.txt
 
 ## 第二步：完整流程
 
-### 先换掉 Electron 版
+### 装上插件
 
-DSH 的插件只在 47321 端口没人应答时才去启动 Electron 版的 Pointy，所以要先让 Go 版占住端口：
+插件包自带 Go 版的 Pointy.exe。从 CI 产物 `pointylab-dsh-windows`（Desktop test 工作流）或 `pointylab-dsh`（macOS 工作流）里取 `pointylab-dsh-<版本>.tgz`：
 
-1. 退出 DSH，在任务管理器里确认没有 `Pointy.exe` 还在跑。
-2. 运行 `desktop\out\Pointy.exe`，不要设 `POINTY_SELFCHECK` 和 `POINTY_ROOT`。托盘里应该出现 Pointy 的图标。
-3. 再打开 DSH。插件会连上已经在跑的 Go 版 Pointy，托盘菜单里应该显示已连接。
+1. 在 DSH「插件」里卸载旧版 Pointy，再退出 DSH。
+2. `dsh plugin --profile desktop add file:<tgz 的绝对路径>`，用 web 版就把 `desktop` 换成 `web`。
+3. 打开 DSH。插件会启动 `pet\win32-x64\Pointy.exe`（DSH 是 arm64 版时是 `win32-arm64`），托盘里出现 Pointy 的图标，托盘菜单里显示已连接。如果旧的 Electron 版还在跑，插件会等它在 10 秒内退出，再换上 Go 版。`~\.pointy\runtime` 里下载过的 Electron 会被删掉。
 
-用的还是原来的 `~\.pointy`，设置、扩展配对都沿用。想让它把每次指认的诊断写进日志，可以在 `~\.pointy\settings.json` 里加上 `"debugPick": true`，日志在 `~\.pointy\error.log`。
+用的还是原来的 `~\.pointy`，设置、扩展配对都沿用。想让它把每次指认的诊断写进日志，可以在 `~\.pointy\settings.json` 里加上 `"debugPick": true`，日志在 `~\.pointy\error.log`。Pointy 自己的输出在 `~\.pointy\pet.log`。
+
+只想试刚编出来的 `desktop\out\Pointy.exe`，就在打开 DSH 之前先运行它，不设 `POINTY_SELFCHECK` 和 `POINTY_ROOT`，它会自己找到仓库的 `build`。插件发现端口上已经有 Go 版，就直接连上它。
 
 ### 记事本
 

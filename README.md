@@ -153,18 +153,19 @@ dsh plugin --profile desktop remove @pointylab/dsh
 <br>
 
 ```
-app\
-  main.js        只负责把下面几块接起来
-  core\os\       和系统打交道的部分，win32.js 和 darwin.js 各一份，对外的样子相同
-  pick\          晃一下鼠标、取选区、普通程序里的指认（Windows 用 UI Automation，macOS 用辅助功能接口），对外只交出"抓到的东西"
-  browser\       浏览器扩展：配对、认证、网页里的指认、切标签页
-  agents\        卡片背后的 agent。index.js 写了每个 agent 要提供的接口，dsh\ 是 DSH 专属的部分
-  ui\            卡片和胶囊、提示窗和开场、托盘
-  server.js      127.0.0.1:47321 的 WebSocket 服务，DSH 插件和浏览器扩展都连这里
-  card\ pill\ notice\ intro\   各个窗口的页面
-plugin\          DSH 插件 @pointylab/dsh：把会话、回答推给 Pointy，必要时下载运行时并拉起 Pointy
-extension\       Chrome / Edge 扩展
-media\           README 用的截图和动图
+desktop/         Pointy 本体，Go 写的，跑在 mygo 上
+  main.go        只负责把下面几块接起来
+  internal/desktop/   和系统打交道的部分，darwin/ 和 windows/ 各一份，对外的样子相同
+  internal/pick/      晃一下鼠标、取选区、普通程序里的指认（Windows 用 UI Automation，macOS 用辅助功能接口），对外只交出"抓到的东西"
+  internal/browser/   浏览器扩展：配对、认证、网页里的指认、切标签页
+  internal/agent/     卡片背后的 agent（DSH），以及 Pointy 随 DSH 启动和退出
+  internal/ui/        卡片和胶囊、提示窗和开场、托盘
+  internal/server/    127.0.0.1:47321 的 WebSocket 服务，DSH 插件和浏览器扩展都连这里
+app/             各个窗口的页面（card、pill、notice、intro、pick/overlay），TypeScript 写的，通过 bridge/ 和 Go 通信
+locales/         页面和 Go 共用的文案
+plugin/          DSH 插件 @pointylab/dsh：把会话、回答推给 Pointy，必要时拉起 Pointy
+extension/       Chrome / Edge 扩展
+media/           README 用的截图和动图
 ```
 
 DSH 的插件宿主是 DSH 自己的程序以 node 模式运行的子进程，无法打开窗口，因此 Pointy 是单独的进程，由插件携带并拉起：`desktop/` 里的 Go 程序，Windows 上是 Pointy.exe，macOS 上是 Pointy.app。
@@ -173,10 +174,11 @@ DSH 的插件宿主是 DSH 自己的程序以 node 模式运行的子进程，�
 
 ```bash
 npm install
-npm start
+npm run build
+cd desktop && go run .
 ```
 
-开发版和插件拉起的那份共用 `~/.pointy` 和单实例锁：开发版运行时，插件发现 47321 端口已有 Pointy，就直接连接，不再拉起自带的那份。
+开发版从仓库的 `build/` 读页面。它和插件拉起的那份共用 `~/.pointy` 和单实例锁：开发版运行时，插件发现 47321 端口已有 Pointy，就直接连接，不再拉起自带的那份。
 
 **打包插件**
 
@@ -188,12 +190,11 @@ node tools/pack-plugin.ts
 
 签名和公证是可选的：设了 `APPLE_SIGNING_IDENTITY` 就用这个 Developer ID 签名，再设 `APPLE_NOTARY_PROFILE`（`xcrun notarytool store-credentials` 存的配置名）就公证并装订。`.github/workflows/macos.yml` 在 macOS 上跑检查并打包，产物是同一个 tgz；仓库配了 `APPLE_CERTIFICATE` 等 secrets 时才签名和公证，没配就 ad hoc。插件没有 npm 依赖。
 
-本地试装：`dsh plugin --profile <profile> add file:<tgz 的绝对路径>`。每次修改后先把 `plugin\package.json` 的版本号加一，同名同版本 pnpm 可能使用缓存；不要用 `link:`（`remove` 会连同源码目录一起删除）。
+本地试装：`dsh plugin --profile <profile> add file:<tgz 的绝对路径>`。每次修改后先把 `plugin/package.json` 的版本号加一，同名同版本 pnpm 可能使用缓存；不要用 `link:`（`remove` 会连同源码目录一起删除）。
 
 **测试用的环境变量**
 
 - `POINTY_PORT`：修改端口，Pointy 和插件两边都识别。
-- `POINTY_TEST_HIDDEN=1`：不显示任何窗口、不创建托盘，配合 `--inspect` 和 `global.pointyTest` 测试。插件拉起 Pointy 时会把这两个变量传下去。
 - `npm run fake`：不启动 DSH，模拟插件推送一遍状态。
 
 </details>
@@ -205,7 +206,5 @@ node tools/pack-plugin.ts
 本项目源代码依 [MIT 许可证](LICENSE) 发布。
 
 仓库中的鲸鱼娘形象素材（卡片旁的像素形象、指认光标、托盘与扩展图标，以及 `media/` 中包含这些形象的截图和动图）不适用 MIT 许可证，而依 [知识共享 署名-非商业性使用-相同方式共享 4.0 国际许可协议（CC BY-NC-SA 4.0）](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans) 授权。原作者为上善无形，像素重绘为 ZipZipPipe。使用、修改或再发布这些素材前，请阅读 [ASSETS.md](ASSETS.md)。
-
-随插件分发的第三方组件 [koffi](https://koffi.dev) 和 [ws](https://github.com/websockets/ws)，以及插件下载的 [Electron](https://www.electronjs.org) 运行时，均依 MIT 许可证发布，并保留各自的版权声明。
 
 Pointy 是社区开发的第三方插件，与 DeepSeek 不存在隶属、合作或背书关系。「DeepSeek」及相关名称和标识归其权利人所有。
