@@ -46,6 +46,9 @@ func (f *fakeDesktop) Foreground() (desktop.Foreground, error) {
 	return desktop.Foreground{ID: 42}, nil
 }
 func (f *fakeDesktop) Blocked(exe string) bool { return f.blocked[exe] }
+func (f *fakeDesktop) Browser(exe string) (desktop.BrowserKind, bool) {
+	return desktop.BrowserChrome, exe == "google chrome"
+}
 func (f *fakeDesktop) WindowAt(pid int, _ desktop.Point) (desktop.Foreground, error) {
 	if w, ok := f.windows[pid]; ok {
 		return w, nil

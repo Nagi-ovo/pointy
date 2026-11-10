@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/pointylab/pointy/desktop/internal/browser"
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/desktop"
@@ -106,5 +107,28 @@ func TestShakeOverABlockedAppSaysWhyAndPointsAtNothing(t *testing.T) {
 			t.Errorf("%s: started pointing", c.front.Exe)
 		}
 		r.hinted(t, c.want)
+	}
+}
+
+type fakeBrowser struct{ cursor desktop.Point }
+
+func (*fakeBrowser) Count() int { return 1 }
+func (b *fakeBrowser) PickInBrowser(_ context.Context, _ desktop.BrowserKind, cursor desktop.Point, _ string) browser.BrowserPick {
+	b.cursor = cursor
+	return browser.BrowserPick{Outcome: browser.PickCancelled}
+}
+
+// The page finds the element under the cursor as cursor / devicePixelRatio
+// minus the window's screenX, so it needs the cursor in device pixels.
+func TestBrowserPickGetsTheCursorInDevicePixels(t *testing.T) {
+	r := newRig(t)
+	r.d.front = &desktop.Foreground{ID: 8, PID: 8, Exe: "google chrome", Title: "Example"}
+	b := &fakeBrowser{}
+	d := r.deps()
+	d.Suppressed = func() bool { return false }
+	d.Browser = b
+	New(d).Pick(desktop.Point{X: 500, Y: 300})
+	if b.cursor != (desktop.Point{X: 1000, Y: 600}) {
+		t.Fatalf("cursor %+v, want 1000,600 on a display at scale 2", b.cursor)
 	}
 }

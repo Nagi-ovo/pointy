@@ -188,7 +188,7 @@ func (p *Picker) Pick(at desktop.Point) {
 	f := noFallback
 	if kind, ok := d.Browser(fg.Exe); ok {
 		if p.d.Browser.Count() > 0 {
-			r := p.d.Browser.PickInBrowser(ctx, kind, at, "")
+			r := p.d.Browser.PickInBrowser(ctx, kind, p.devicePixels(at), "")
 			switch r.Outcome {
 			case browser.Picked:
 				g := contract.Grab{Source: source, Method: contract.MethodPick, URL: r.URL, PageTitle: r.PageTitle, Element: r.Element, Image: r.Image}
@@ -298,6 +298,17 @@ func firstRunes(s string, n int) string {
 		return string(r[:n])
 	}
 	return s
+}
+
+// devicePixels is the cursor as the extension takes it: in the display's
+// pixels, which the page divides by its devicePixelRatio. On a Retina Mac a
+// point spans two of them.
+func (p *Picker) devicePixels(at desktop.Point) desktop.Point {
+	q, scale := p.d.Desktop.ToDIP(at), p.d.DisplayAt(at).ScaleFactor
+	if scale <= 0 {
+		scale = 1
+	}
+	return desktop.Point{X: q.X * scale, Y: q.Y * scale}
 }
 
 // releaseOnly holds a browser pick, which the page draws and moves itself.
