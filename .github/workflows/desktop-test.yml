@@ -4,7 +4,11 @@ on:
   pull_request:
     paths:
       - desktop/**
-      - assets/cursor/**
+      - app/**
+      - plugin/**
+      - tools/**
+      - assets/**
+      - package.json
       - .github/workflows/desktop-test.yml
   workflow_dispatch:
 
@@ -84,3 +88,153 @@ jobs:
         with:
           name: pointy-desktop-windows
           path: desktop/out/
+
+  # Packs the plugin with the Windows executables, installs it into a DSH
+  # of its own, and checks that DSH starts the Go Pointy in place of an
+  # Electron install.
+  plugin:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            dir: win32-x64
+          - runner: windows-11-arm
+            dir: win32-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DSH_VERSION: 0.2.2-rc.1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - run: npm ci
+      - run: npm run check
+      - name: Pack the plugin
+        run: node tools/pack-plugin.ts --windows-only
+      - uses: actions/upload-artifact@v5
+        if: matrix.runner == 'windows-latest'
+        with:
+          name: pointylab-dsh-windows
+          path: dist/*.tgz
+          if-no-files-found: error
+      - name: Install the package into DSH and start it
+        run: |
+          $out = New-Item -ItemType Directory -Force out
+          $results = Join-Path $out 'plugin-check.txt'
+          function Check($name, $ok, $detail) {
+            $line = "$(if ($ok) { 'PASS' } else { 'FAIL' }) ${name}: $detail"
+            Add-Content -LiteralPath $results $line
+            Write-Host $line
+          }
+
+          $scratch = Join-Path $env:RUNNER_TEMP 'dsh'
+          New-Item -ItemType Directory -Force $scratch | Out-Null
+          Push-Location $scratch
+          npm init -y | Out-Null
+          npm i "@deepseek-ai/dsh@$env:DSH_VERSION" --no-fund --no-audit
+          Pop-Location
+          # DSH installs plugins with pnpm.
+          npm i -g pnpm@10 --no-fund --no-audit
+          $env:DSH_HOME = Join-Path $scratch 'home'
+          $dsh = Join-Path $scratch 'node_modules\.bin\dsh.cmd'
+
+          # What an Electron install leaves behind: its runtime, and settings to keep.
+          $pointyHome = Join-Path $HOME '.pointy'
+          $electron = Join-Path $pointyHome 'runtime\electron-v44.0.0-win32-x64'
+          New-Item -ItemType Directory -Force $electron | Out-Null
+          Set-Content -LiteralPath (Join-Path $electron 'Pointy.exe') 'stand-in'
+          $settings = Join-Path $pointyHome 'settings.json'
+          Set-Content -LiteralPath $settings -Value '{"dnd":false,"shake":true,"shakeLevel":"high","welcomed":true,"locale":"en","fromElectron":"kept"}'
+
+          $tgz = (Resolve-Path dist\*.tgz).Path
+          & $dsh plugin --profile web add "file:$tgz" *> (Join-Path $out 'dsh-plugin-add.txt')
+          Check 'dsh plugin add' ($LASTEXITCODE -eq 0) "exit $LASTEXITCODE"
+
+          $web = Start-Process -FilePath $dsh -ArgumentList 'web', '--port', '3093', '--no-open' -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput (Join-Path $out 'dsh-web.out.txt') -RedirectStandardError (Join-Path $out 'dsh-web.err.txt')
+
+          $pointy = $null
+          for ($i = 0; $i -lt 90 -and -not $pointy; $i++) {
+            Start-Sleep -Seconds 1
+            $pointy = Get-CimInstance Win32_Process -Filter "Name = 'Pointy.exe'" | Select-Object -First 1
+          }
+          Check 'DSH starts Pointy.exe' ($null -ne $pointy) "$($pointy.ExecutablePath)"
+          if ($pointy) {
+            $path = $pointy.ExecutablePath
+            $ok = $path.StartsWith($env:DSH_HOME, 'OrdinalIgnoreCase') -and $path.EndsWith('\pet\${{ matrix.dir }}\Pointy.exe', 'OrdinalIgnoreCase')
+            Check "Pointy.exe runs from the plugin's pet\${{ matrix.dir }}" $ok $path
+          }
+
+          $handshake = Join-Path $env:RUNNER_TEMP 'handshake.mjs'
+          Set-Content -LiteralPath $handshake -Value @'
+          import crypto from 'node:crypto'
+          import fs from 'node:fs'
+          import os from 'node:os'
+          import path from 'node:path'
+          const token = fs.readFileSync(path.join(os.homedir(), '.pointy', 'token'), 'utf8').trim()
+          const hmac = (data) => crypto.createHmac('sha256', token).update(data).digest('hex')
+          const nonce = crypto.randomBytes(16).toString('hex')
+          const ws = new WebSocket('ws://127.0.0.1:47321')
+          const timer = setTimeout(() => { console.log('timeout'); process.exit(1) }, 15000)
+          ws.addEventListener('message', (ev) => {
+            const msg = JSON.parse(String(ev.data))
+            if (msg.type === 'challenge') ws.send(JSON.stringify({ type: 'hello', v: 1, nonce, proof: hmac(`plugin|${msg.nonce}`) }))
+            if (msg.type === 'hello-ok') {
+              clearTimeout(timer)
+              console.log(JSON.stringify({ runtime: msg.runtime, proof: msg.proof === hmac(`pet|${nonce}`) }))
+              ws.close()
+            }
+          })
+          ws.addEventListener('error', () => { console.log('error'); process.exit(1) })
+          '@
+          $reply = ''
+          for ($i = 0; $i -lt 30; $i++) {
+            $reply = node $handshake 2>&1
+            if ($LASTEXITCODE -eq 0) { break }
+            Start-Sleep -Seconds 1
+          }
+          Check 'the handshake reports runtime go' ($reply -eq '{"runtime":"go","proof":true}') "$reply"
+
+          Check 'the Electron runtime is gone' (-not (Test-Path -LiteralPath (Join-Path $pointyHome 'runtime'))) (Join-Path $pointyHome 'runtime')
+          $kept = Get-Content -Raw -LiteralPath $settings | ConvertFrom-Json
+          Check "the Electron install's settings are kept" ($kept.shakeLevel -eq 'high' -and $kept.locale -eq 'en' -and $kept.fromElectron -eq 'kept') (Get-Content -Raw -LiteralPath $settings)
+
+          # The plugin keeps its connection only once Pointy proves itself the Go runtime.
+          $dshPids = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match [regex]::Escape($scratch) } | ForEach-Object { [int]$_.ProcessId })
+          $link = $null
+          for ($i = 0; $i -lt 30 -and -not $link; $i++) {
+            $link = Get-NetTCPConnection -RemotePort 47321 -State Established -ErrorAction SilentlyContinue | Where-Object { $dshPids -contains $_.OwningProcess } | Select-Object -First 1
+            if (-not $link) { Start-Sleep -Seconds 1 }
+          }
+          Check "DSH's plugin stays connected to Pointy" ($null -ne $link) "node $($link.OwningProcess) -> 127.0.0.1:47321"
+
+          Get-CimInstance Win32_Process | Where-Object { $_.Name -ne 'Pointy.exe' -and $_.CommandLine -match [regex]::Escape($scratch) } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          Stop-Process -Id $web.Id -Force -ErrorAction SilentlyContinue
+          $gone = $false
+          for ($i = 0; $i -lt 60 -and -not $gone; $i++) {
+            Start-Sleep -Seconds 1
+            $gone = -not (Get-CimInstance Win32_Process -Filter "Name = 'Pointy.exe'")
+          }
+          Check 'Pointy quits when DSH quits' $gone 'within 60 s'
+
+          foreach ($f in 'pet.log', 'error.log') {
+            $src = Join-Path $pointyHome $f
+            if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src (Join-Path $out $f) }
+          }
+          if (Select-String -LiteralPath $results -Pattern '^FAIL' -Quiet) { exit 1 }
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: plugin-check-${{ matrix.dir }}
+          path: out/
