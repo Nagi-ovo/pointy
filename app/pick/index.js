@@ -4,7 +4,8 @@
 //   { source: { app, title }, method, text?, url?, pageTitle?, element?, image?, wideImage?, shotKind?, before?, after? }
 // onGrab(grab, release?)：release 撤掉指认后留在屏幕上的高亮框
 const { foreground, blockedReason, elevatedUnderCursor, grabSelection, BROWSERS } = require('./selection')
-const { accessHint } = require('../core/os')
+const { screen } = require('electron')
+const { accessHint, toDipPoint } = require('../core/os')
 const { startShakeDetector } = require('./shake')
 const { pickNative } = require('./uipick')
 const { settings, TEST_HIDDEN, logError } = require('../core/env')
@@ -30,9 +31,16 @@ async function busy(fn) {
   try { return await fn() } finally { busySince = undefined }
 }
 
+/** 扩展要的光标是显示器的像素，网页拿它除以 devicePixelRatio：Mac 的点、Windows 的物理像素都先换成 DIP 再乘缩放比 */
+function devicePixels(p) {
+  const dip = toDipPoint(p)
+  const { scaleFactor } = screen.getDisplayNearestPoint(dip)
+  return { x: dip.x * scaleFactor, y: dip.y * scaleFactor }
+}
+
 /** 浏览器里指认一块内容；返回扩展的结果类型 */
 async function pickAndOpen(fg, cursor, urlHint) {
-  const r = await busy(() => deps.browser.pickInBrowser(fg.exe, cursor, urlHint))
+  const r = await busy(() => deps.browser.pickInBrowser(fg.exe, devicePixels(cursor), urlHint))
   if (r.type === 'picked') {
     // 指到图片、视频、画布时扩展会附一张那块的截图（只在内存里）
     deps.onGrab({ source: { app: fg.exe, title: fg.title }, method: 'pick', url: r.url, pageTitle: r.pageTitle, element: r.element, text: r.element?.text, image: r.image }, r.release)
