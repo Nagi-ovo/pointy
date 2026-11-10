@@ -25,9 +25,6 @@
     "locale"
   ],
   "os": ["win32", "darwin"],
-  "dependencies": {
-    "resedit": "^3.1.0"
-  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
