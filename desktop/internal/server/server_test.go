@@ -98,7 +98,7 @@ func TestPluginProof(t *testing.T) {
 	url, plugins := start(t, Routes{})
 	c := dial(t, url)
 	reply := c.hello(token)
-	if reply["type"] != "hello-ok" || !Verify(token, "pet|client-nonce", reply["proof"]) {
+	if reply["type"] != "hello-ok" || !Verify(token, "pet|client-nonce", reply["proof"]) || reply["runtime"] != "go" {
 		t.Fatalf("reply %v", reply)
 	}
 	h := <-plugins

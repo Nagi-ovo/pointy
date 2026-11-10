@@ -37,7 +37,7 @@ type PetMessage =
   | { type: 'focus', sessionId: unknown }
   | Extract<CardRequest, { type: 'suggest-request' }>
   | Omit<AskRequest, 'model' | 'images'> & { model?: ModelChoice, images?: unknown }
-type HandshakeMessage = { type: 'challenge', nonce: string } | { type: 'hello-ok', proof: unknown }
+type HandshakeMessage = { type: 'challenge', nonce: string } | { type: 'hello-ok', proof: unknown, runtime?: unknown }
 
 interface SessionItem {
   sessionId: string
@@ -67,6 +67,8 @@ const TOKEN_FILE = path.join(PET_DIR, 'token')
 const PET_LOG = path.join(PET_DIR, 'pet.log')
 const PET_LOG_MAX = 256 * 1024
 const RECONNECT_MS = 3000
+/** An Electron Pointy that DSH started quits 10 s after its plugin goes away. */
+const ELECTRON_QUIT_MS = 15_000
 /** Events older than this are replays (session load), not live activity. */
 const STALE_EVENT_MS = 30_000
 const LINE_MIN_INTERVAL_MS = 15_000
@@ -141,13 +143,13 @@ function openPetLog() {
 }
 
 async function launchPet(logger: Logger) {
-  let exe
+  let launch
   try {
-    exe = await ensureRuntime(logger)
+    launch = await ensureRuntime(logger, PET_LOG)
   } catch (error) {
     return logger.warn(`pointy: cannot start Pointy: ${(error as Error).message}`)
   }
-  logger.info(`pointy: starting Pointy: ${exe} ${PET_APP_DIR}`)
+  logger.info(`pointy: starting Pointy: ${launch.exe} ${launch.args.join(' ')}`)
   // The DSH host runs Electron in node mode; the pet must not inherit that.
   const env: NodeJS.ProcessEnv = { ...process.env, POINTY_MANAGED: '1', POINTY_HOST_PID: String(process.pid) }
   delete env.ELECTRON_RUN_AS_NODE
@@ -156,9 +158,10 @@ async function launchPet(logger: Logger) {
     // stdout/stderr must not be the NUL device: koffi flushes stderr at exit, FlushFileBuffers
     // fails on NUL, and koffi's error path re-locks the stream mutex and aborts (0xC0000409).
     const out = openPetLog()
-    const child = spawn(exe!, [PET_APP_DIR], { cwd: PET_APP_DIR, env, detached: true, stdio: ['ignore', out, out] })
+    const child = spawn(launch.exe, launch.args, { cwd: PET_APP_DIR, env, detached: true, stdio: ['ignore', out, out] })
     fs.closeSync(out)
     child.on('error', (error) => logger.warn(`pointy: failed to start Pointy: ${error.message}`))
+    child.on('exit', (code) => { if (code) logger.warn(`pointy: ${path.basename(launch.exe)} exited with ${code}, see ${PET_LOG}`) })
     child.unref()
   } catch (error) {
     logger.warn(`pointy: failed to start Pointy: ${(error as Error).message}`)
@@ -172,6 +175,8 @@ class PetLink {
   authed: boolean
   stopped: boolean
   timer: ReturnType<typeof setTimeout> | undefined
+  /** No reconnecting before this time. */
+  waitUntil: number
   onReady: () => void
   onLost: () => void
   onUnreachable: () => void
@@ -183,6 +188,7 @@ class PetLink {
     this.authed = false
     this.stopped = false
     this.timer = undefined
+    this.waitUntil = 0
     this.onReady = () => {}
     this.onLost = () => {}
     this.onUnreachable = () => {}
@@ -222,6 +228,12 @@ class PetLink {
           ws.close()
           return
         }
+        if (process.platform === 'darwin' && msg.runtime !== 'go') {
+          this.logger.info('pointy: an Electron Pointy holds the port; leaving it to quit so the Go app replaces it')
+          this.waitUntil = Date.now() + ELECTRON_QUIT_MS
+          ws.close()
+          return
+        }
         this.authed = true
         this.onReady()
       } else if (this.authed) {
@@ -242,7 +254,7 @@ class PetLink {
   retry() {
     if (this.stopped) return
     clearTimeout(this.timer)
-    this.timer = setTimeout(() => this.connect(), RECONNECT_MS)
+    this.timer = setTimeout(() => this.connect(), Math.max(RECONNECT_MS, this.waitUntil - Date.now()))
   }
 
   send(msg: object) {

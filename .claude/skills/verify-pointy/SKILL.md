@@ -36,7 +36,7 @@ eval "$(zsh .claude/skills/verify-pointy/scripts/up.sh zh-CN)"   # or "en", or "
 4. Installs the plugin into `DSH_HOME=$VP_RUN/dsh-home` with `HOME=$VP_RUN/home`.
 5. Starts `tools/mock-llm.ts` on 47398, then Pointy on 47397 with `MYGO_AUTOMATION=$VP_RUN/a.sock`, then `dsh web --port 3093`.
 
-It is ready when it prints `export VP_RUN=...`, which means the plugin connected (`dsh-ui` in `$VP_RUN/home/.pointy/error.log`). Pointy must be up before DSH. Otherwise the plugin downloads and starts its own runtime.
+It is ready when it prints `export VP_RUN=...`, which means the plugin connected (`dsh-ui` in `$VP_RUN/home/.pointy/error.log`). Pointy must be up before DSH. Otherwise the plugin starts the Pointy.app it carries.
 
 Two traps `up.sh` already handles:
 

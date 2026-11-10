@@ -39,7 +39,7 @@ print -r -- '- id: agent-default-model
 node "$REPO/tools/mock-llm.ts" $MOCK_PORT "$EV/mock.jsonl" > "$VP_RUN/mock.log" 2>&1 &
 print $! > "$VP_RUN/pids/mock"
 
-# Pointy first: the plugin starts its own runtime when nothing listens.
+# Pointy first: the plugin starts the Pointy.app it carries when nothing listens.
 POINTY_ROOT=$REPO/build MYGO_AUTOMATION=$SOCK "$BIN/Pointy" > "$VP_RUN/pointy.log" 2>&1 &
 print $! > "$VP_RUN/pids/pointy"
 wait_until 20 "Pointy on $POINTY_PORT" nc -z 127.0.0.1 $POINTY_PORT
