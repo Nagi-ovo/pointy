@@ -142,6 +142,7 @@ func (d *Desktop) restack() bool {
 	for i, w := range onScreen {
 		index[w.id] = i
 	}
+	owners := ownerLookup{onScreen: index, listAll: func() []cgWindow { return windowList(listAll, 0) }}
 	attachMu.Lock()
 	type job struct {
 		owner desktop.WindowID
@@ -156,12 +157,12 @@ func (d *Desktop) restack() bool {
 			}
 		}
 		oi, ok := index[owner]
-		if len(live) == 0 || !ok {
+		if len(live) == 0 || !owners.exists(owner) {
 			delete(attached, owner)
 			continue
 		}
 		attached[owner] = live
-		if onScreen[oi].pid == front {
+		if ok && onScreen[oi].pid == front {
 			jobs = append(jobs, job{owner, live})
 		}
 	}
@@ -200,4 +201,27 @@ func (d *Desktop) restack() bool {
 		})
 	}
 	return left
+}
+
+// ownerLookup tells whether an owner window still exists. A minimized window,
+// or one on another Space, is missing from the on-screen list but still in the
+// full one, so its card stays attached for when it comes back. The full list
+// is read at most once per pass, and only for an owner not on screen.
+type ownerLookup struct {
+	onScreen map[desktop.WindowID]int
+	listAll  func() []cgWindow
+	all      map[desktop.WindowID]bool
+}
+
+func (l *ownerLookup) exists(id desktop.WindowID) bool {
+	if _, ok := l.onScreen[id]; ok {
+		return true
+	}
+	if l.all == nil {
+		l.all = map[desktop.WindowID]bool{}
+		for _, w := range l.listAll() {
+			l.all[w.id] = true
+		}
+	}
+	return l.all[id]
 }

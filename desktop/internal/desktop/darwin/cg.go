@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	listAll               = 0
 	listOnScreenOnly      = 1
 	listIncludingWindow   = 8
 	listExcludeDesktopEls = 16
