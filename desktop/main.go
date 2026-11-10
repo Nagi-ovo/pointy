@@ -234,7 +234,8 @@ func installedVersion(root string) string {
 }
 
 // resourceRoot is the directory holding app/, extension/ and assets/:
-// POINTY_ROOT, the app bundle's Resources, or the build/ directory of the
+// POINTY_ROOT, the app bundle's Resources, the plugin's pet/ directory
+// above pet/win32-<arch>/Pointy.exe, or the build/ directory of the
 // checkout the executable sits in.
 func resourceRoot() string {
 	if r := os.Getenv("POINTY_ROOT"); r != "" {
@@ -248,6 +249,9 @@ func resourceRoot() string {
 	bundled := filepath.Join(filepath.Dir(exe), "..", "Resources", "build")
 	if isDir(filepath.Join(bundled, "app")) {
 		return bundled
+	}
+	if pet := filepath.Dir(filepath.Dir(exe)); isDir(filepath.Join(pet, "app", "card")) {
+		return pet
 	}
 	for dir := filepath.Dir(exe); ; {
 		if isDir(filepath.Join(dir, "build", "app", "card")) {

@@ -10,7 +10,7 @@
 
 <p>
   <img alt="内测中" src="https://img.shields.io/badge/%E7%8A%B6%E6%80%81-%E5%86%85%E6%B5%8B%E4%B8%AD-E8A33D?style=flat-square&labelColor=1C2033">
-  <img alt="Windows 10/11 x64" src="https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-4D6BFE?style=flat-square&logo=windows&logoColor=white&labelColor=1C2033">
+  <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%2F%2011-4D6BFE?style=flat-square&logo=windows&logoColor=white&labelColor=1C2033">
   <img alt="macOS 12+" src="https://img.shields.io/badge/macOS-12%2B-4D6BFE?style=flat-square&logo=apple&logoColor=white&labelColor=1C2033">
   <img alt="DeepSeek Harness 插件" src="https://img.shields.io/badge/DeepSeek%20Harness-%E6%8F%92%E4%BB%B6-4D6BFE?style=flat-square&labelColor=1C2033">
   <a href="LICENSE"><img alt="许可证 MIT" src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-4D6BFE?style=flat-square&labelColor=1C2033"></a>
@@ -101,7 +101,7 @@ github:pointylab/pointy#release
 
 ## 安装说明
 
-**系统要求**：Windows 10 / 11（x64），或 macOS 12 及以上（Apple 芯片和 Intel 都支持）。
+**系统要求**：Windows 10 / 11（x64 和 Arm 都支持，要有 WebView2 运行时，Windows 11 自带），或 macOS 12 及以上（Apple 芯片和 Intel 都支持）。
 
 **安装**：DSH 里「插件」→「添加插件」，填 `github:pointylab/pointy#release`，点「安装」。装新版之前，先在「插件」里卸载旧版。也可以用命令行：
 
@@ -111,7 +111,7 @@ dsh plugin --profile desktop add github:pointylab/pointy#release
 
 用 web 版 DSH 的，把 `desktop` 换成 `web`。
 
-**首次启用**：装完重启 DSH。Windows 上插件会下载一次 Pointy 用的运行时（约 150 MB）在 `%USERPROFILE%\.pointy\runtime`；macOS 上 Pointy.app 随插件安装，不用下载。准备好后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
+**首次启用**：装完重启 DSH。Pointy 随插件安装，不用另外下载：Windows 上是插件里的 Pointy.exe，macOS 上是 Pointy.app。以前装过的版本下载的运行时（`~/.pointy/runtime`）会被删除，设置保留。准备好后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
 
 <p align="center">
   <picture>
@@ -132,7 +132,7 @@ dsh plugin --profile desktop add github:pointylab/pointy#release
 
 - 晃动检测只读取光标位置，不安装鼠标钩子，也不记录轨迹。
 - 只有在你指认并确认之后，Pointy 才读取那一块内容；浏览器扩展同样只在被调用时读取页面。截图只保存在内存中，随第一个问题一起发出。
-- 指到的内容和你的问题只交给本机的 DSH，再由 DSH 发给你在 DSH 中配置的模型。除首次下载运行时外，Pointy 本身不联网。
+- 指到的内容和你的问题只交给本机的 DSH，再由 DSH 发给你在 DSH 中配置的模型。Pointy 本身不联网。
 - Pointy、DSH 插件和浏览器扩展之间只通过本机 `127.0.0.1` 通信，连接需要认证；浏览器扩展需要你在弹窗中点「允许」才能连接。
 - 在密码管理器、系统登录与授权弹窗，以及标题像登录、密码、网银、支付页面的窗口中，晃动不会触发指认。
 - Windows 上以管理员身份运行的程序无法读取，指认时会给出提示。
@@ -167,7 +167,7 @@ extension\       Chrome / Edge 扩展
 media\           README 用的截图和动图
 ```
 
-DSH 的插件宿主是 DSH 自己的程序以 node 模式运行的子进程，无法打开窗口，因此 Pointy 是单独的进程，由插件携带并拉起：Windows 上是 Electron，macOS 上是 `desktop/` 里的 Go 程序（Pointy.app）。
+DSH 的插件宿主是 DSH 自己的程序以 node 模式运行的子进程，无法打开窗口，因此 Pointy 是单独的进程，由插件携带并拉起：`desktop/` 里的 Go 程序，Windows 上是 Pointy.exe，macOS 上是 Pointy.app。
 
 **运行开发版**
 
@@ -184,9 +184,9 @@ npm start
 node tools/pack-plugin.ts
 ```
 
-要在装了 Go 的 Mac 上运行。它把 `app`、`assets`、`extension` 复制进 `plugin\pet`，koffi（只保留 Windows x64 的预编译文件）和 ws 放进 `plugin\pet\vendor`，固定 Electron 版本和 Windows 安装包的官方 SHA-256；再用 `go tool mygo build` 生成 Apple 芯片和 Intel 通用的 `plugin/pet/Pointy.app`（带页面资源，默认 ad hoc 签名），最后 `npm pack` 生成 `dist\pointylab-dsh-<版本>.tgz`。macOS 上插件通过 `open` 启动包里的 Pointy.app，这样系统把辅助功能和屏幕录制权限记在 Pointy 名下；以前装过的 `~/.pointy/runtime`（Electron）会被删除，设置保留。
+要在装了 Go 的 Mac 上运行。它把 `app`、`assets`、`extension` 复制进 `plugin/pet`，用 `go tool mygo build` 生成 Apple 芯片和 Intel 通用的 `plugin/pet/Pointy.app`（带页面资源，默认 ad hoc 签名），再交叉编译 Windows 的 `plugin/pet/win32-x64/Pointy.exe` 和 `plugin/pet/win32-arm64/Pointy.exe`（不用 cgo；图标和按显示器感知 DPI 的清单由 mygo 生成，打包时再在清单里写上 `asInvoker`），最后 `npm pack` 生成 `dist/pointylab-dsh-<版本>.tgz`。macOS 上插件通过 `open` 启动包里的 Pointy.app，这样系统把辅助功能和屏幕录制权限记在 Pointy 名下；Windows 上插件直接启动对应架构的 Pointy.exe，它读 `plugin/pet` 里的页面。以前装过的 `~/.pointy/runtime`（Electron）会被删除，设置保留。在 Windows 或 Linux 上可以用 `node tools/pack-plugin.ts --windows-only` 打一个只有 Windows 程序的包，用来测试。
 
-签名和公证是可选的：设了 `APPLE_SIGNING_IDENTITY` 就用这个 Developer ID 签名，再设 `APPLE_NOTARY_PROFILE`（`xcrun notarytool store-credentials` 存的配置名）就公证并装订。`.github/workflows/macos.yml` 在 macOS 上跑检查并打包，产物是同一个 tgz；仓库配了 `APPLE_CERTIFICATE` 等 secrets 时才签名和公证，没配就 ad hoc。koffi 不作为 npm 依赖：pnpm 默认拦截依赖的安装脚本，koffi 带有安装脚本，被拦截后 `dsh plugin add` 会报错。插件唯一的依赖是 resedit（纯 JS），Windows 上下载 Electron 后用它把 electron.exe 改名为 Pointy.exe，并替换描述和图标。
+签名和公证是可选的：设了 `APPLE_SIGNING_IDENTITY` 就用这个 Developer ID 签名，再设 `APPLE_NOTARY_PROFILE`（`xcrun notarytool store-credentials` 存的配置名）就公证并装订。`.github/workflows/macos.yml` 在 macOS 上跑检查并打包，产物是同一个 tgz；仓库配了 `APPLE_CERTIFICATE` 等 secrets 时才签名和公证，没配就 ad hoc。插件没有 npm 依赖。
 
 本地试装：`dsh plugin --profile <profile> add file:<tgz 的绝对路径>`。每次修改后先把 `plugin\package.json` 的版本号加一，同名同版本 pnpm 可能使用缓存；不要用 `link:`（`remove` 会连同源码目录一起删除）。
 
