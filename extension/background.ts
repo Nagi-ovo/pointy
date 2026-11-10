@@ -65,10 +65,13 @@ async function connect() {
       heldTabs.delete(msg.reqId)
       if (tabId !== undefined) chrome.tabs.sendMessage<PickControlMessage>(tabId, { type: 'pick-release', reqId: msg.reqId }).catch(() => {})
     } else if (authed && msg.type === 'pick-start') {
+      // 页面上已经选了字时，pick.js 一注入就交结果，可能比 startPick 返回还早
+      pickReq = msg.reqId
       const ok = await startPick(msg.cursor, msg.urlHint)
-      if (!ok) sock.send(JSON.stringify({ type: 'pick-unavailable', reqId: msg.reqId }))
-      else {
-        pickReq = msg.reqId
+      if (!ok) {
+        if (pickReq === msg.reqId) pickReq = undefined
+        sock.send(JSON.stringify({ type: 'pick-unavailable', reqId: msg.reqId }))
+      } else {
         sock.send(JSON.stringify({ type: 'pick-started', reqId: msg.reqId, tabTitle: pickTab?.title, tabUrl: pickTab?.url }))
       }
     }
