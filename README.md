@@ -111,7 +111,7 @@ dsh plugin --profile desktop add github:pointylab/pointy#release
 
 用 web 版 DSH 的，把 `desktop` 换成 `web`。
 
-**首次启用**：装完重启 DSH。插件会下载一次 Pointy 用的运行时（约 150 MB）在 `%USERPROFILE%\.pointy\runtime`（macOS 是 `~/.pointy/runtime`）。下载完成后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
+**首次启用**：装完重启 DSH。Windows 上插件会下载一次 Pointy 用的运行时（约 150 MB）在 `%USERPROFILE%\.pointy\runtime`；macOS 上 Pointy.app 随插件安装，不用下载。准备好后，托盘里出现鲸鱼图标，屏幕中间播放一段开场，就可以开始用了。之后 Pointy 随 DSH 启动、随 DSH 退出。
 
 <p align="center">
   <picture>
@@ -167,7 +167,7 @@ extension\       Chrome / Edge 扩展
 media\           README 用的截图和动图
 ```
 
-DSH 的插件宿主是 DSH 自己的程序以 node 模式运行的子进程，无法打开窗口，因此 Pointy 是单独的 Electron 进程，由插件携带并拉起。
+DSH 的插件宿主是 DSH 自己的程序以 node 模式运行的子进程，无法打开窗口，因此 Pointy 是单独的进程，由插件携带并拉起：Windows 上是 Electron，macOS 上是 `desktop/` 里的 Go 程序（Pointy.app）。
 
 **运行开发版**
 
@@ -181,10 +181,12 @@ npm start
 **打包插件**
 
 ```bash
-node tools/pack-plugin.mjs
+node tools/pack-plugin.ts
 ```
 
-把 `app`、`assets`、`extension` 复制进 `plugin\pet`，koffi（只保留 Windows x64 和 macOS arm64 / x64 的预编译文件）和 ws 放进 `plugin\pet\vendor`，固定 Electron 版本和各平台安装包的官方 SHA-256，`npm pack` 生成 `dist\pointylab-dsh-<版本>.tgz`。koffi 不作为 npm 依赖：pnpm 默认拦截依赖的安装脚本，koffi 带有安装脚本，被拦截后 `dsh plugin add` 会报错。插件唯一的依赖是 resedit（纯 JS），Windows 上下载 Electron 后用它把 electron.exe 改名为 Pointy.exe，并替换描述和图标；macOS 上改名为 Pointy.app、换图标，再用系统自带的 `codesign` 重新签名（ad hoc）。
+要在装了 Go 的 Mac 上运行。它把 `app`、`assets`、`extension` 复制进 `plugin\pet`，koffi（只保留 Windows x64 的预编译文件）和 ws 放进 `plugin\pet\vendor`，固定 Electron 版本和 Windows 安装包的官方 SHA-256；再用 `go tool mygo build` 生成 Apple 芯片和 Intel 通用的 `plugin/pet/Pointy.app`（带页面资源，默认 ad hoc 签名），最后 `npm pack` 生成 `dist\pointylab-dsh-<版本>.tgz`。macOS 上插件通过 `open` 启动包里的 Pointy.app，这样系统把辅助功能和屏幕录制权限记在 Pointy 名下；以前装过的 `~/.pointy/runtime`（Electron）会被删除，设置保留。
+
+签名和公证是可选的：设了 `APPLE_SIGNING_IDENTITY` 就用这个 Developer ID 签名，再设 `APPLE_NOTARY_PROFILE`（`xcrun notarytool store-credentials` 存的配置名）就公证并装订。`.github/workflows/macos.yml` 在 macOS 上跑检查并打包，产物是同一个 tgz；仓库配了 `APPLE_CERTIFICATE` 等 secrets 时才签名和公证，没配就 ad hoc。koffi 不作为 npm 依赖：pnpm 默认拦截依赖的安装脚本，koffi 带有安装脚本，被拦截后 `dsh plugin add` 会报错。插件唯一的依赖是 resedit（纯 JS），Windows 上下载 Electron 后用它把 electron.exe 改名为 Pointy.exe，并替换描述和图标。
 
 本地试装：`dsh plugin --profile <profile> add file:<tgz 的绝对路径>`。每次修改后先把 `plugin\package.json` 的版本号加一，同名同版本 pnpm 可能使用缓存；不要用 `link:`（`remove` 会连同源码目录一起删除）。
 

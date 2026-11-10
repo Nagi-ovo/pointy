@@ -1,9 +1,0 @@
-{
-  "name": "Pointy",
-  "identifier": "lab.pointy.app",
-  "bindings": "../app/bridge/mygo.ts",
-  "resources": ["../build"],
-  "macos": {
-    "infoPlist": { "LSUIElement": true }
-  }
-}

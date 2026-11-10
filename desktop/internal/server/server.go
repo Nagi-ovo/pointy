@@ -174,7 +174,7 @@ func (r Routes) serve(c *Conn) {
 			c.Close()
 		default:
 			kick.Stop()
-			if err := c.Send(map[string]string{"type": "hello-ok", "proof": Sign(r.Token, "pet|"+hello.Nonce)}); err != nil && r.OnError != nil {
+			if err := c.Send(map[string]string{"type": "hello-ok", "proof": Sign(r.Token, "pet|"+hello.Nonce), "runtime": "go"}); err != nil && r.OnError != nil {
 				r.OnError("server", err)
 			}
 			handler = r.Plugin(c)

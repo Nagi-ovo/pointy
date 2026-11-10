@@ -17,6 +17,8 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60_000
 const TARGET = `${process.platform}-${process.arch}`
 
 export type Logger = Pick<Console, 'info' | 'warn'>
+/** How the plugin starts Pointy: run exe with args. */
+export interface Launch { exe: string, args: string[] }
 interface Pin { version: string, sha256: string }
 interface Target {
   exes: string[]
@@ -111,63 +113,47 @@ async function brandWindows(dir: string, zip: string, logger: Logger) {
   }
 }
 
-const plist = (file: string, key: string, type: string, value: string) => run('/usr/bin/plutil', ['-replace', key, type, value, file])
-
-/**
- * Editing the bundle breaks Electron's signature, and Apple silicon refuses to
- * run unsigned code, so the result is re-signed ad hoc. The zip comes from
- * fetch, not a browser, so it carries no quarantine flag for Gatekeeper to check.
- */
-async function brandMac(dir: string, zip: string, logger: Logger) {
-  const app = path.join(dir, 'Pointy.app')
-  const contents = path.join(app, 'Contents')
-  try {
-    fs.renameSync(path.join(dir, 'Electron.app'), app)
-    fs.renameSync(path.join(contents, 'MacOS', 'Electron'), path.join(contents, 'MacOS', 'Pointy'))
-    const info = path.join(contents, 'Info.plist')
-    for (const key of ['CFBundleExecutable', 'CFBundleName', 'CFBundleDisplayName']) await plist(info, key, '-string', 'Pointy')
-    await plist(info, 'CFBundleIdentifier', '-string', 'lab.pointy.app')
-    await plist(info, 'LSUIElement', '-bool', 'true')
-    const icns = path.join(PET_APP_DIR, 'assets', 'pointy.icns')
-    if (fs.existsSync(icns)) {
-      fs.copyFileSync(icns, path.join(contents, 'Resources', 'pointy.icns'))
-      await plist(info, 'CFBundleIconFile', '-string', 'pointy.icns')
-    }
-    await run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', app])
-  } catch (error) {
-    logger.warn(`pointy: could not rebrand Electron.app (${(error as Error).message}); using it as is`)
-    for (const name of fs.readdirSync(dir)) fs.rmSync(path.join(dir, name), { recursive: true, force: true })
-    await unzipMac(zip, dir)
-  }
-}
-
 // Windows 10+ ships bsdtar, which reads zip archives.
 const unzipWindows = (zip: string, dir: string) => run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', zip, '-C', dir])
-// ditto keeps the symlinks inside Electron Framework.framework, which a plain unzip would flatten.
-const unzipMac = (zip: string, dir: string) => run('/usr/bin/ditto', ['-x', '-k', zip, dir])
-
-const MAC: Target = {
-  exes: ['Pointy.app/Contents/MacOS/Pointy', 'Electron.app/Contents/MacOS/Electron'],
-  stock: 'Electron.app/Contents/MacOS/Electron',
-  unzip: unzipMac,
-  brand: brandMac,
-}
 const TARGETS: Record<string, Target | undefined> = {
   'win32-x64': { exes: ['Pointy.exe'], stock: 'electron.exe', unzip: unzipWindows, brand: brandWindows },
-  'darwin-arm64': MAC,
-  'darwin-x64': MAC,
+}
+
+const MAC_APP = path.join(PET_APP_DIR, 'Pointy.app')
+
+/**
+ * On macOS Pointy is the Go app the package carries. LaunchServices starts
+ * it, not this process, so macOS asks the user to trust Pointy rather than
+ * DSH, and the app inherits this environment.
+ */
+function macLaunch(log: string, logger: Logger): Launch {
+  if (!fs.existsSync(path.join(MAC_APP, 'Contents', 'MacOS', 'Pointy'))) throw new Error(`${MAC_APP} is missing; reinstall the plugin`)
+  removeElectron(logger)
+  return { exe: '/usr/bin/open', args: ['-n', '-g', '--stdout', log, '--stderr', log, MAC_APP] }
+}
+
+/** Earlier builds ran Electron on macOS from RUNTIME_DIR. The rest of ~/.pointy holds the user's settings and stays. */
+function removeElectron(logger: Logger) {
+  if (!fs.existsSync(RUNTIME_DIR)) return
+  fs.rmSync(RUNTIME_DIR, { recursive: true, force: true })
+  logger.info(`pointy: removed the Electron runtime in ${RUNTIME_DIR}`)
 }
 
 let installing: Promise<string | undefined> | undefined
-export function ensureRuntime(logger: Logger): Promise<string | undefined> {
+/** log is the file Pointy's output goes to. */
+export async function ensureRuntime(logger: Logger, log: string): Promise<Launch> {
+  if (process.platform === 'darwin') return macLaunch(log, logger)
   const target = TARGETS[TARGET]
-  if (!target) return Promise.reject(new Error(`Pointy supports Windows x64 and macOS (arm64, x64), not ${TARGET}`))
+  if (!target) throw new Error(`Pointy supports Windows x64 and macOS, not ${TARGET}`)
   const pin = pinnedRuntime()
-  if (!pin) return Promise.reject(new Error(`no pinned Electron for ${TARGET} in ${PET_APP_DIR}`))
-  const ready = installedRuntime(pin)
-  if (ready) return Promise.resolve(ready)
-  installing ??= install(pin, target, logger).finally(() => { installing = undefined })
-  return installing
+  if (!pin) throw new Error(`no pinned Electron for ${TARGET} in ${PET_APP_DIR}`)
+  let exe = installedRuntime(pin)
+  if (!exe) {
+    installing ??= install(pin, target, logger).finally(() => { installing = undefined })
+    exe = await installing
+  }
+  if (!exe) throw new Error(`Electron ${pin.version} did not install`)
+  return { exe, args: [PET_APP_DIR] }
 }
 
 async function install(pin: Pin, target: Target, logger: Logger) {
