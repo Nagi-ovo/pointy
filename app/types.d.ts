@@ -1,8 +1,6 @@
 /// <reference path="./bridge/runtime.d.ts" />
 /// <reference path="./protocol.d.ts" />
 
-type ScreenRect = [number, number, number, number]
-
 // Data that crosses between Go and the pages is declared in Go
 // (desktop/internal/contract) and generated into bridge/mygo.ts.
 type GrabSource = import('./bridge/mygo.ts').GrabSource
@@ -22,7 +20,6 @@ type PillState = import('./bridge/mygo.ts').PillState
 type KeepInfo = import('./bridge/mygo.ts').KeepInfo
 type PillItem = import('./bridge/mygo.ts').PillItem
 
-// Go sends a notice's texts as messages; Electron still sends them worded.
 type NoticeText = string | Message
 interface NoticeButton { id: string; label: NoticeText; primary?: boolean }
 type NoticeParagraph = NoticeText | { text: NoticeText; copy: string[] }
@@ -30,24 +27,6 @@ interface NoticeInit { title: NoticeText; body: NoticeParagraph[]; buttons?: Not
 type IntroInit = import('./bridge/mygo.ts').IntroInit
 type LocalRect = import('./bridge/mygo.ts').LocalRect
 type OverlayHighlight = import('./bridge/mygo.ts').OverlayHighlight
-
-interface A11yChainItem { rect: ScreenRect | null; control: string; cls?: string; name?: string; opaque?: boolean }
-interface A11yGrabReply { ok: boolean; isPassword?: boolean; control?: string; text?: string; error?: string }
-interface A11yPointReply { ok: boolean; chain?: A11yChainItem[]; leafKids?: boolean; leafReadable?: boolean; win?: ScreenRect | null; error?: string }
-interface A11yElementReply {
-  ok: boolean
-  isPassword?: boolean
-  name?: string
-  control?: string
-  className?: string
-  rect?: ScreenRect | null
-  kids?: boolean
-  readable?: boolean
-  win?: ScreenRect | null
-  text?: string
-  href?: string
-  error?: string
-}
 
 interface CardApi {
   onInit(fn: (data: CardInit) => void): void
