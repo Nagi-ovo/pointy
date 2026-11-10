@@ -9,6 +9,7 @@ const { koffi, CF, CG, libSystem, CGRect, constant, cfstr, toString, toNumber, t
 // ---------- 窗口列表 ----------
 const CGWindowListCopyWindowInfo = CG.func('void *CGWindowListCopyWindowInfo(uint32 option, uint32 relativeTo)')
 const CGRectMakeWithDictionaryRepresentation = CG.func('bool CGRectMakeWithDictionaryRepresentation(void *dict, _Out_ CGRect *rect)')
+const kCGWindowListOptionAll = 0
 const kCGWindowListOptionOnScreenOnly = 1
 const kCGWindowListOptionIncludingWindow = 8
 const kCGWindowListExcludeDesktopElements = 16
@@ -70,11 +71,15 @@ function restack() {
   const pid = frontmostPid()
   const onScreen = windows()
   const index = new Map(onScreen.map((w, i) => [w.id, i]))
+  // 最小化了、在别的桌面上的窗口不在屏幕列表里，要查全部窗口才知道还在不在；只在有来源窗口不在屏幕上时查
+  let all
+  const exists = (id) => (all ??= new Set(windows(kCGWindowListOptionAll).map((w) => w.id))).has(id)
   for (const [owner, list] of attached) {
     const live = list.filter((w) => !w.isDestroyed())
-    if (!live.length || !index.has(owner)) { attached.delete(owner); continue }
+    if (!live.length || (!index.has(owner) && !exists(owner))) { attached.delete(owner); continue }
     attached.set(owner, live)
-    if (onScreen[index.get(owner)].pid !== pid) continue
+    // 来源窗口暂时不在屏幕上：留着，回来时接着排在它上面
+    if (!index.has(owner) || onScreen[index.get(owner)].pid !== pid) continue
     const shown = live.filter((w) => w.isVisible())
     // 越靠前编号越小；有一个落到来源窗口后面了才重排，平时不动
     if (!shown.some((w) => (index.get(windowId(w)) ?? Infinity) > index.get(owner))) continue
