@@ -7,7 +7,8 @@ import "github.com/pointylab/pointy/desktop/internal/desktop"
 // Foreground names apps by their executable's base name in lower case.
 
 var browsers = map[string]desktop.BrowserKind{
-	"google chrome": desktop.BrowserChrome, "google chrome beta": desktop.BrowserChrome, "google chrome canary": desktop.BrowserChrome,
+	"google chrome": desktop.BrowserChrome, "google chrome beta": desktop.BrowserChrome, "google chrome dev": desktop.BrowserChrome,
+	"google chrome canary": desktop.BrowserChrome, "google chrome for testing": desktop.BrowserChrome,
 	"microsoft edge": desktop.BrowserEdge, "brave browser": desktop.BrowserChrome, "vivaldi": desktop.BrowserChrome,
 	"chromium": desktop.BrowserChrome, "arc": desktop.BrowserChrome,
 }
