@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+
+	"github.com/pointylab/pointy/desktop/internal/contract"
 )
 
 func TestEveryKeyNamesAMessageInEveryLanguage(t *testing.T) {
@@ -34,6 +36,8 @@ func TestMessagesFillPlaceholdersAndPluralForms(t *testing.T) {
 		{"en", In("en", PairTitle), "The Pointy extension in {browser} wants to connect"},
 		{"en", In("en", Control("ControlType.Button")), "Button"},
 		{"zh-CN", In("zh-CN", Control("ControlType.Spinner")), "控件"},
+		{"zh-CN", In("zh-CN", HintBlockedPassword), "密码框里的内容 Pointy 不读"},
+		{"en", In("en", HintBlockedLogin), "Pointy doesn't read login or payment pages"},
 	}
 	for _, c := range cases {
 		if c.got != c.want {
@@ -102,5 +106,16 @@ func TestGoCodeHasNoChineseLiterals(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEveryBlockReasonHasAHint(t *testing.T) {
+	for _, r := range []contract.BlockReason{contract.BlockPasswordField, contract.BlockApp, contract.BlockLoginWindow} {
+		if hint, ok := BlockHint(r); !ok || hint == "" {
+			t.Errorf("no hint for %s", r)
+		}
+	}
+	if _, ok := BlockHint("unknown"); ok {
+		t.Error("a hint for an unknown reason")
 	}
 }

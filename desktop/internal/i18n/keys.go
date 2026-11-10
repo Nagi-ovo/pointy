@@ -30,6 +30,10 @@ var (
 	HintNoHook     = key("hint.noHook")
 	HintWebSession = key("hint.webSession")
 
+	HintBlockedPassword = key("hint.blockedPassword")
+	HintBlockedLogin    = key("hint.blockedLogin")
+	HintBlockedApp      = key("hint.blockedApp")
+
 	NoteExtensionOffline    = key("note.extensionOffline")
 	NoteExtensionSilent     = key("note.extensionSilent")
 	OverlayExtensionOffline = key("overlay.extensionOffline")

@@ -57,7 +57,10 @@
     "access": "Allow Pointy first: System Settings → Privacy & Security → Accessibility",
     "elevated": "This app runs as administrator, so Pointy can't read it",
     "noHook": "Pointy couldn't hold this click, so it can't point. Allow Pointy under Accessibility first",
-    "webSession": "Switched {agent} in your browser to this session"
+    "webSession": "Switched {agent} in your browser to this session",
+    "blockedPassword": "Pointy doesn't read password fields",
+    "blockedLogin": "Pointy doesn't read login or payment pages",
+    "blockedApp": "Pointy doesn't read this app"
   },
   "note": {
     "extensionOffline": "The browser extension isn't connected, so this page was read like any app and Pointy can't point at a paragraph in it.",

@@ -7,6 +7,7 @@ import (
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/desktop"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 )
 
 var terminal = desktop.Foreground{ID: 42, PID: 3, Exe: "terminal", Title: "zsh"}
@@ -58,5 +59,52 @@ func TestPickInALoginWindowBehindOpensNothing(t *testing.T) {
 	}
 	if !r.overlay.closed {
 		t.Fatal("the box stayed drawn over the login window")
+	}
+}
+
+func (r *rig) hinted(t *testing.T, want contract.BlockReason) {
+	t.Helper()
+	h, _ := i18n.BlockHint(want)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.hints) != 1 || r.hints[0] != h {
+		t.Fatalf("hints %q, want [%q]", r.hints, h)
+	}
+}
+
+func TestPickInALoginWindowBehindSaysWhy(t *testing.T) {
+	r := newRig(t)
+	r.d.windows = map[int]desktop.Foreground{7: {ID: 9, PID: 7, Exe: "safari", Title: "Sign in to your bank"}}
+	pickBehind(t, r, terminal)
+	r.hinted(t, contract.BlockLoginWindow)
+}
+
+func TestPointingAtAPasswordFieldSaysWhy(t *testing.T) {
+	r := newRig(t)
+	r.d.element = desktop.ElementReply{IsPassword: true}
+	if g := pickBehind(t, r, terminal); g != nil {
+		t.Fatalf("opened a card on %+v", g.Source)
+	}
+	r.hinted(t, contract.BlockPasswordField)
+}
+
+func TestShakeOverABlockedAppSaysWhyAndPointsAtNothing(t *testing.T) {
+	for _, c := range []struct {
+		front desktop.Foreground
+		want  contract.BlockReason
+	}{
+		{desktop.Foreground{ID: 5, PID: 5, Exe: "1password", Title: "Vault"}, contract.BlockApp},
+		{desktop.Foreground{ID: 6, PID: 6, Exe: "textedit", Title: "登录 - 网上银行"}, contract.BlockLoginWindow},
+	} {
+		r := newRig(t)
+		r.d.front, r.d.blocked = &c.front, map[string]bool{"1password": true}
+		d := r.deps()
+		d.Suppressed = func() bool { return false }
+		d.OpenGrab = func(g contract.Grab, _ Card) { t.Errorf("%s: opened a card on %+v", c.front.Exe, g.Source) }
+		New(d).Pick(desktop.Point{X: 500, Y: 300})
+		if r.opened.Load() != 0 {
+			t.Errorf("%s: started pointing", c.front.Exe)
+		}
+		r.hinted(t, c.want)
 	}
 }
