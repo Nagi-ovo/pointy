@@ -171,7 +171,7 @@ async function onPickResult(msg: PickResultMessage, sender: chrome.runtime.Messa
   const reqId = pickReq
   pickReq = undefined
   if (!authed || reqId === undefined) return
-  if (msg.cancelled || !msg.result) return ws!.send(JSON.stringify({ type: 'pick-cancel', reqId }))
+  if (msg.cancelled || !msg.result) return ws!.send(JSON.stringify({ type: 'pick-cancel', reqId, blocked: msg.cancelled ? msg.blocked : undefined }))
   const tab = (sender.tab ?? pickTab)!
   const r = msg.result
   const visual = r.kind === 'image' || r.kind === 'video' || r.tag === 'canvas' || ((r.text ?? '').trim().length < 30 && r.images?.length > 0)

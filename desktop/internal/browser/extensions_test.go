@@ -50,3 +50,18 @@ func TestSelectionOnALoginPageOpensNothing(t *testing.T) {
 		}
 	}
 }
+
+func TestPickCancelCarriesThePagesBlockReason(t *testing.T) {
+	e := New(Deps{})
+	p := &picking{reqID: "r1", started: make(chan struct{}), reply: make(chan pickReply, 1)}
+	e.picking = p
+	(&handler{e: e}).OnMessage(server.Message{Type: "pick-cancel", Raw: []byte(`{"type":"pick-cancel","reqId":"r1","blocked":"password-field"}`)})
+	select {
+	case r := <-p.reply:
+		if r.Blocked != contract.BlockPasswordField {
+			t.Fatalf("blocked %q", r.Blocked)
+		}
+	default:
+		t.Fatal("the cancel did not reach the pick")
+	}
+}

@@ -110,12 +110,15 @@ func TestShakeOverABlockedAppSaysWhyAndPointsAtNothing(t *testing.T) {
 	}
 }
 
-type fakeBrowser struct{ cursor desktop.Point }
+type fakeBrowser struct {
+	cursor  desktop.Point
+	blocked contract.BlockReason
+}
 
 func (*fakeBrowser) Count() int { return 1 }
 func (b *fakeBrowser) PickInBrowser(_ context.Context, _ desktop.BrowserKind, cursor desktop.Point, _ string) browser.BrowserPick {
 	b.cursor = cursor
-	return browser.BrowserPick{Outcome: browser.PickCancelled}
+	return browser.BrowserPick{Outcome: browser.PickCancelled, Blocked: b.blocked}
 }
 
 // The page finds the element under the cursor as cursor / devicePixelRatio
@@ -131,4 +134,15 @@ func TestBrowserPickGetsTheCursorInDevicePixels(t *testing.T) {
 	if b.cursor != (desktop.Point{X: 1000, Y: 600}) {
 		t.Fatalf("cursor %+v, want 1000,600 on a display at scale 2", b.cursor)
 	}
+}
+
+func TestPageRefusingAPasswordFieldSaysWhy(t *testing.T) {
+	r := newRig(t)
+	r.d.front = &desktop.Foreground{ID: 8, PID: 8, Exe: "google chrome", Title: "Example"}
+	d := r.deps()
+	d.Suppressed = func() bool { return false }
+	d.Browser = &fakeBrowser{blocked: contract.BlockPasswordField}
+	d.OpenGrab = func(g contract.Grab, _ Card) { t.Errorf("opened a card on %+v", g) }
+	New(d).Pick(desktop.Point{X: 500, Y: 300})
+	r.hinted(t, contract.BlockPasswordField)
 }

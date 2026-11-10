@@ -34,6 +34,8 @@ type BrowserPick struct {
 	PageTitle string
 	Element   *contract.GrabElement
 	Image     string
+	// Blocked says why the page refused the pick, when it did.
+	Blocked contract.BlockReason
 	// Release lets the page drop its highlight.
 	Release func()
 }
@@ -46,6 +48,7 @@ type pickReply struct {
 	PageTitle string                `json:"pageTitle"`
 	Element   *contract.GrabElement `json:"element"`
 	Image     string                `json:"image"`
+	Blocked   contract.BlockReason  `json:"blocked"`
 }
 
 type picking struct {
@@ -147,7 +150,7 @@ func (e *Extensions) PickInBrowser(ctx context.Context, kind desktop.BrowserKind
 			case "pick-unavailable":
 				return BrowserPick{Outcome: PickUnavailable, Release: release}
 			default:
-				return BrowserPick{Outcome: PickCancelled, Release: release}
+				return BrowserPick{Outcome: PickCancelled, Blocked: r.Blocked, Release: release}
 			}
 		}
 	}
