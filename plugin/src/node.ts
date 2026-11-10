@@ -6,7 +6,7 @@ import path from 'node:path'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { activityOf } from './activity.ts'
 import { composeAsk, composeFirst, isOurPreamble } from './compose.ts'
-import { type Logger, PET_APP_DIR, ensureRuntime } from './runtime.ts'
+import { type Logger, PET_APP_DIR, petLaunch } from './runtime.ts'
 
 interface Route { provider: string, model: string }
 interface Agent { followup(message: unknown): void }
@@ -142,21 +142,19 @@ function openPetLog() {
   return fs.openSync(PET_LOG, size > PET_LOG_MAX ? 'w' : 'a')
 }
 
-async function launchPet(logger: Logger) {
+function launchPet(logger: Logger) {
   let launch
   try {
-    launch = await ensureRuntime(logger, PET_LOG)
+    launch = petLaunch(logger, PET_LOG)
   } catch (error) {
     return logger.warn(`pointy: cannot start Pointy: ${(error as Error).message}`)
   }
   logger.info(`pointy: starting Pointy: ${launch.exe} ${launch.args.join(' ')}`)
-  // The DSH host runs Electron in node mode; the pet must not inherit that.
+  // DSH desktop runs plugins in Electron's node mode; apps Pointy opens must not inherit that.
   const env: NodeJS.ProcessEnv = { ...process.env, POINTY_MANAGED: '1', POINTY_HOST_PID: String(process.pid) }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.NODE_OPTIONS
   try {
-    // stdout/stderr must not be the NUL device: koffi flushes stderr at exit, FlushFileBuffers
-    // fails on NUL, and koffi's error path re-locks the stream mutex and aborts (0xC0000409).
     const out = openPetLog()
     const child = spawn(launch.exe, launch.args, { cwd: PET_APP_DIR, env, detached: true, stdio: ['ignore', out, out] })
     fs.closeSync(out)
@@ -228,7 +226,7 @@ class PetLink {
           ws.close()
           return
         }
-        if (process.platform === 'darwin' && msg.runtime !== 'go') {
+        if (msg.runtime !== 'go') {
           this.logger.info('pointy: an Electron Pointy holds the port; leaving it to quit so the Go app replaces it')
           this.waitUntil = Date.now() + ELECTRON_QUIT_MS
           ws.close()
@@ -286,7 +284,7 @@ export function apply(ctx: DshContext) {
   link.onUnreachable = () => {
     if (launchTried) return
     launchTried = true
-    launchPet(logger).catch((error) => logger.warn(`pointy: ${error.message}`))
+    launchPet(logger)
   }
   link.onLost = () => {
     for (const answer of pendingApprovals.values()) answer('detach')
