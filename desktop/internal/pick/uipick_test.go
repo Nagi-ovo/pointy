@@ -24,6 +24,8 @@ type fakeDesktop struct {
 	events     chan desktop.Button
 	hookErr    error
 	windows    map[int]desktop.Foreground
+	front      *desktop.Foreground
+	blocked    map[string]bool
 
 	mu        sync.Mutex
 	readUp    int
@@ -38,8 +40,12 @@ type fakeDesktop struct {
 
 func (f *fakeDesktop) Cursor() desktop.Point { return desktop.Point{X: 500, Y: 300} }
 func (f *fakeDesktop) Foreground() (desktop.Foreground, error) {
+	if f.front != nil {
+		return *f.front, nil
+	}
 	return desktop.Foreground{ID: 42}, nil
 }
+func (f *fakeDesktop) Blocked(exe string) bool { return f.blocked[exe] }
 func (f *fakeDesktop) WindowAt(pid int, _ desktop.Point) (desktop.Foreground, error) {
 	if w, ok := f.windows[pid]; ok {
 		return w, nil
@@ -139,6 +145,7 @@ type rig struct {
 	mu           sync.Mutex
 	keys         map[string]func()
 	unregistered bool
+	hints        []string
 
 	done chan struct{}
 	pick *nativePick
@@ -168,6 +175,7 @@ func (r *rig) deps() Deps {
 		DisplayAt: func(desktop.Point) mygo.Display {
 			return mygo.Display{Bounds: mygo.Rectangle{X: 0, Y: 0, Width: 1440, Height: 900}, ScaleFactor: 2}
 		},
+		ShowHint: func(h string) { r.mu.Lock(); r.hints = append(r.hints, h); r.mu.Unlock() },
 		Keys: func(k map[string]func()) func() {
 			r.mu.Lock()
 			r.keys = k

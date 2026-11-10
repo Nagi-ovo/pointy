@@ -152,6 +152,22 @@ func Msg(k Key, args ...string) contract.Message {
 	return m
 }
 
+var blockHints = map[contract.BlockReason]Key{
+	contract.BlockPasswordField: HintBlockedPassword,
+	contract.BlockLoginWindow:   HintBlockedLogin,
+	contract.BlockApp:           HintBlockedApp,
+}
+
+// BlockHint is the hint that tells the user why Pointy kept out; ok is
+// false for a reason it has no hint for.
+func BlockHint(r contract.BlockReason) (hint string, ok bool) {
+	k, ok := blockHints[r]
+	if !ok {
+		return "", false
+	}
+	return T(k), true
+}
+
 // Control is the message naming a UI Automation control type, as
 // "ControlType.Button".
 func Control(controlType string) Key {

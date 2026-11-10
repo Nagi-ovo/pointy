@@ -15,6 +15,7 @@ import (
 	"github.com/pointylab/pointy/desktop/internal/config"
 	"github.com/pointylab/pointy/desktop/internal/contract"
 	"github.com/pointylab/pointy/desktop/internal/desktop"
+	"github.com/pointylab/pointy/desktop/internal/i18n"
 	"github.com/pointylab/pointy/desktop/internal/server"
 )
 
@@ -30,6 +31,8 @@ type Deps struct {
 	ShowNotice func(contract.NoticeInit, time.Duration) (choice <-chan *string, cancel func())
 	// OnSelection opens a card on what the user sent from the browser.
 	OnSelection func(contract.Grab)
+	// ShowHint says, for a moment, why a selection opened nothing.
+	ShowHint func(string)
 }
 
 type extension struct {
@@ -142,7 +145,13 @@ func (h *handler) OnMessage(m server.Message) {
 		return
 	}
 	g := sel.Grab
-	if g.Blocked != "" || desktop.LoginTitle(g.PageTitle) {
+	if desktop.LoginTitle(g.PageTitle) && g.Blocked == "" {
+		g.Blocked = contract.BlockLoginWindow
+	}
+	if g.Blocked != "" {
+		if hint, ok := i18n.BlockHint(g.Blocked); ok && h.e.deps.ShowHint != nil {
+			h.e.deps.ShowHint(hint)
+		}
 		return
 	}
 	g.Source = contract.GrabSource{App: cmp.Or(sel.Browser, "browser"), Title: g.PageTitle}

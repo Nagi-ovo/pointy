@@ -88,6 +88,7 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 		Home: home, BundledDir: filepath.Join(root, "extension"), OnChange: changed, Log: logError,
 		ShowNotice:  windows.ShowNotice,
 		OnSelection: func(g contract.Grab) { windows.OpenGrab(g, nil) },
+		ShowHint:    windows.ShowHint,
 	})
 	exts.SyncUserExtension()
 

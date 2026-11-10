@@ -169,7 +169,11 @@ func (p *Picker) Pick(at desktop.Point) {
 
 	d := p.d.Desktop
 	fg, err := d.Foreground()
-	if err != nil || blocked(d, fg) {
+	if err != nil {
+		return
+	}
+	if r := blockReason(d, fg); r != "" {
+		p.refuse(r)
 		return
 	}
 	if !d.HasAccess() {
@@ -207,6 +211,7 @@ func (p *Picker) Pick(at desktop.Point) {
 	sel, _ := d.Grab(sctx)
 	scancel()
 	if sel.IsPassword {
+		p.refuse(contract.BlockPasswordField)
 		return
 	}
 	if sel.OK && strings.TrimSpace(sel.Text) != "" {
@@ -223,7 +228,9 @@ func (p *Picker) pickControl(ctx context.Context, fg desktop.Foreground, f fallb
 	}
 	r, err := pointNative(ctx, p.d, note)
 	if err != nil {
-		if !errors.Is(err, errPassword) {
+		if errors.Is(err, errPassword) {
+			p.refuse(contract.BlockPasswordField)
+		} else {
 			p.d.log("pick", err)
 		}
 		if errors.Is(err, errNoHook) {
@@ -239,8 +246,9 @@ func (p *Picker) pickControl(ctx context.Context, fg desktop.Foreground, f fallb
 	if r.window.Exe != "" {
 		src = r.window
 	}
-	if blocked(p.d.Desktop, src) {
+	if reason := blockReason(p.d.Desktop, src); reason != "" {
 		r.held.Release()
+		p.refuse(reason)
 		return
 	}
 	el := r.element
