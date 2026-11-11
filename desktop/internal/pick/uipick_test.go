@@ -403,3 +403,35 @@ func TestHighlightIsInTheOverlaysCoordinates(t *testing.T) {
 		}
 	}
 }
+
+// A scrollable area reports its whole scrolled height; the box, the opaque
+// check and the capture use only the part inside its window and display.
+func TestTallScrollAreaIsClippedToItsWindow(t *testing.T) {
+	r := newRig(t)
+	tall := desktop.ChainItem{Rect: rect(100, -2000, 600, 8000), Control: "ControlType.Document", Class: "Chrome_RenderWidgetHostHWND"}
+	r.d.chain = desktop.PointReply{OK: true, Chain: []desktop.ChainItem{tall, window}, Win: window.Rect, LeafReadable: true}
+	r.d.element.Rect = tall.Rect
+	r.start(context.Background())
+	r.pointed()
+	want := contract.LocalRect{X: 100, Y: 60, Width: 600, Height: 400}
+	if got := r.overlay.last().LocalRect; got != want {
+		t.Errorf("box %+v, want %+v", got, want)
+	}
+	r.d.events <- desktop.LeftUp
+	r.finish()
+	r.d.mu.Lock()
+	defer r.d.mu.Unlock()
+	if len(r.d.captures) == 0 || r.d.captures[0][1] < 0 || r.d.captures[0][3] > 500 {
+		t.Errorf("captured %v, want the part inside the window", r.d.captures)
+	}
+}
+
+func TestPartlyOffscreenControlIsClippedToTheDisplay(t *testing.T) {
+	s := &session{d: Deps{Desktop: &fakeDesktop{}}, display: mygo.Display{Bounds: mygo.Rectangle{X: 0, Y: 0, Width: 1440, Height: 900}}, scale: 1}
+	if got, want := s.visible(desktop.Rect{1300, 800, 400, 300}, nil), (desktop.Rect{1300, 800, 140, 100}); got != want {
+		t.Errorf("visible = %v, want %v", got, want)
+	}
+	if got, want := s.visible(desktop.Rect{2000, 100, 50, 50}, nil), (desktop.Rect{2000, 100, 50, 50}); got != want {
+		t.Errorf("a rect off the display: %v, want it unchanged %v", got, want)
+	}
+}

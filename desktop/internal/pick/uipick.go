@@ -260,9 +260,9 @@ func (s *session) setChain(r desktop.PointReply) {
 		if c.Rect == nil || c.Rect[2] <= minControl || c.Rect[3] <= minControl {
 			continue
 		}
-		dr := drawn{ChainItem: c, rect: *c.Rect}
+		dr := drawn{ChainItem: c, rect: s.visible(*c.Rect, r.Win)}
 		if i == 0 {
-			dr.opaque = isOpaque(shape{Class: c.Class, Type: c.Control, Rect: c.Rect, Win: r.Win, Kids: r.LeafKids, Readable: r.LeafReadable})
+			dr.opaque = isOpaque(shape{Class: c.Class, Type: c.Control, Rect: &dr.rect, Win: r.Win, Kids: r.LeafKids, Readable: r.LeafReadable})
 		}
 		s.chain = append(s.chain, dr)
 	}
@@ -273,6 +273,37 @@ func (s *session) current() (drawn, bool) {
 		return drawn{}, false
 	}
 	return s.chain[min(s.level, len(s.chain)-1)], true
+}
+
+// visible is the part of r on screen. A scrollable area, such as a chat log
+// or a long page in an Electron or Chromium app, reports its whole scrolled
+// size, thousands of units taller than its window, and a box around all of
+// it would fill the display. r is clipped to its window, then to the
+// display.
+func (s *session) visible(r desktop.Rect, win *desktop.Rect) desktop.Rect {
+	in := r
+	if win != nil {
+		if w, ok := intersect(r, *win); ok {
+			in = w
+		}
+	}
+	b := s.display.Bounds
+	o := s.d.Desktop.ToScreen(desktop.Point{X: float64(b.X), Y: float64(b.Y)})
+	screen := desktop.Rect{int(round(o.X)), int(round(o.Y)), int(round(float64(b.Width) * s.scale)), int(round(float64(b.Height) * s.scale))}
+	if v, ok := intersect(in, screen); ok {
+		return v
+	}
+	return r
+}
+
+// intersect is the overlap of a and b, if they overlap.
+func intersect(a, b desktop.Rect) (desktop.Rect, bool) {
+	x, y := max(a[0], b[0]), max(a[1], b[1])
+	w, h := min(a[0]+a[2], b[0]+b[2])-x, min(a[1]+a[3], b[1]+b[3])-y
+	if w <= 0 || h <= 0 {
+		return desktop.Rect{}, false
+	}
+	return desktop.Rect{x, y, w, h}, true
 }
 
 func (s *session) local(r desktop.Rect) contract.LocalRect {
@@ -347,6 +378,10 @@ func (s *session) read(ctx context.Context, at desktop.Point, level int, zoom fl
 		return nil, errPassword
 	case !el.OK:
 		return nil, nil
+	}
+	if el.Rect != nil {
+		v := s.visible(*el.Rect, el.Win)
+		el.Rect = &v
 	}
 	sh := shape{Class: el.ClassName, Type: el.Control, Rect: el.Rect, Win: el.Win, Kids: el.Kids, Readable: el.Readable}
 	p := &nativePick{element: el}
