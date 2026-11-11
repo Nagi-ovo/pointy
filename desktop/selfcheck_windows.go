@@ -61,6 +61,8 @@ const (
 	mouseWheel              = 0x0800
 	idcArrow                = 32512
 	gwlExStyleIndex         = ^uintptr(19)
+	gwlStyleIndex           = ^uintptr(15)
+	wsMaximizeBox           = 0x00010000
 	swMaximize              = 3
 	swRestore               = 9
 	monitorDefaultToNearest = 2
@@ -274,6 +276,11 @@ func (winDriver) monitorRect(id desktop.WindowID) (desktop.Rect, bool) {
 	ok, _, _ := procGetMonitorInfoW.Call(m, uintptr(unsafe.Pointer(&info)))
 	r := info.Monitor
 	return desktop.Rect{int(r.Left), int(r.Top), int(r.Right - r.Left), int(r.Bottom - r.Top)}, ok != 0
+}
+
+func (winDriver) canMaximize(id desktop.WindowID) bool {
+	s, _, _ := procGetWindowLongPtrW.Call(uintptr(id), gwlStyleIndex)
+	return s&wsMaximizeBox != 0
 }
 
 func (winDriver) isMaximized(id desktop.WindowID) bool {

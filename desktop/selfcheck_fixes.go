@@ -38,6 +38,11 @@ func checkMaximized(r *report, d desktop.Desktop, drv selfDriver, fg desktop.For
 		return
 	}
 
+	if !drv.canMaximize(fg.ID) {
+		// Such as the taskbar or the desktop when no app is in front.
+		r.skip("a maximized window is not full screen", fmt.Sprintf("the target %#x cannot be maximized", uint64(fg.ID)))
+		return
+	}
 	wasMaximized := drv.isMaximized(fg.ID)
 	if !wasMaximized {
 		if err := drv.maximize(fg.ID); err != nil {

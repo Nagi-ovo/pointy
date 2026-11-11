@@ -48,6 +48,8 @@ type selfDriver interface {
 	screen(desktop.Rect) (image.Image, error)
 	monitorRect(desktop.WindowID) (desktop.Rect, bool)
 	isMaximized(desktop.WindowID) bool
+	// canMaximize reports whether the window has a maximize button.
+	canMaximize(desktop.WindowID) bool
 	maximize(desktop.WindowID) error
 	restore(desktop.WindowID) error
 	focus(desktop.WindowID) bool
