@@ -30,6 +30,7 @@ var (
 	procGetAncestor                  = user32.NewProc("GetAncestor")
 	procWindowFromPoint              = user32.NewProc("WindowFromPoint")
 	procGetWindowRect                = user32.NewProc("GetWindowRect")
+	procIsZoomed                     = user32.NewProc("IsZoomed")
 	procMonitorFromWindow            = user32.NewProc("MonitorFromWindow")
 	procGetMonitorInfoW              = user32.NewProc("GetMonitorInfoW")
 	procEnumDisplayMonitors          = user32.NewProc("EnumDisplayMonitors")
@@ -158,14 +159,17 @@ func (*Desktop) FullscreenActive(own []desktop.WindowID) (bool, error) {
 	skip := fg == 0 || slices.Contains(own, desktop.WindowID(fg))
 	var class string
 	var r, m rect
+	var zoomed bool
 	if !skip {
 		class = className(fg)
+		z, _, _ := procIsZoomed.Call(uintptr(fg))
+		zoomed = z != 0
 		var okR, okM bool
 		r, okR = windowRect(fg)
 		m, okM = monitorRectOf(fg)
 		skip = !okR || !okM
 	}
-	return fullscreen(state, class, r.desktop(), m.desktop(), skip), nil
+	return fullscreen(state, class, r.desktop(), m.desktop(), zoomed, skip), nil
 }
 
 func process(pid uint32) desktop.Foreground {

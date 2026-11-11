@@ -69,11 +69,14 @@ var shellClasses = map[string]bool{"Progman": true, "WorkerW": true, "Shell_Tray
 // display sets it, such as a screen recorder's mask; an app the user
 // watches in full screen is the foreground window, which the second test
 // catches, and borderless games often report no full-screen state at all.
-func fullscreen(state int32, fgClass string, fg, monitor desktop.Rect, skipFg bool) bool {
+// A maximized window (fgZoomed) never counts: its invisible borders reach
+// past the display, and with an auto-hidden taskbar it covers all of it.
+// Games and F11 full screen are not maximized.
+func fullscreen(state int32, fgClass string, fg, monitor desktop.Rect, fgZoomed, skipFg bool) bool {
 	if state == qunsRunningD3DFullScreen || state == qunsPresentationMode {
 		return true
 	}
-	if skipFg || shellClasses[fgClass] {
+	if skipFg || fgZoomed || shellClasses[fgClass] {
 		return false
 	}
 	return fg[0] <= monitor[0] && fg[1] <= monitor[1] && fg[0]+fg[2] >= monitor[0]+monitor[2] && fg[1]+fg[3] >= monitor[1]+monitor[3]

@@ -42,24 +42,27 @@ func TestFullscreen(t *testing.T) {
 	monitor := desktop.Rect{0, 0, 1920, 1080}
 	video := desktop.Rect{0, 0, 1920, 1080}
 	maximized := desktop.Rect{-8, -8, 1936, 1048}
+	maximizedNoTaskbar := desktop.Rect{-8, -8, 1936, 1096}
 	for _, tt := range []struct {
-		name  string
-		state int32
-		class string
-		fg    desktop.Rect
-		own   bool
-		want  bool
+		name   string
+		state  int32
+		class  string
+		fg     desktop.Rect
+		zoomed bool
+		own    bool
+		want   bool
 	}{
-		{"a game in exclusive full screen", qunsRunningD3DFullScreen, "UnityWndClass", maximized, false, true},
-		{"a slideshow", qunsPresentationMode, "screenClass", maximized, false, true},
-		{"a borderless video player", 1, "MediaPlayer", video, false, true},
-		{"a maximized window above the taskbar", 1, "Notepad", maximized, false, false},
-		{"the desktop", 1, "Progman", video, false, false},
-		{"the taskbar", 1, "Shell_TrayWnd", video, false, false},
-		{"Pointy's own window", 1, "mygo", video, true, false},
-		{"something topmost filling the screen, not in front", 2, "Notepad", maximized, false, false},
+		{"a game in exclusive full screen", qunsRunningD3DFullScreen, "UnityWndClass", maximized, false, false, true},
+		{"a slideshow", qunsPresentationMode, "screenClass", maximized, false, false, true},
+		{"a borderless video player", 1, "MediaPlayer", video, false, false, true},
+		{"a maximized window above the taskbar", 1, "Notepad", maximized, true, false, false},
+		{"a maximized window with the taskbar auto-hidden", 1, "Notepad", maximizedNoTaskbar, true, false, false},
+		{"the desktop", 1, "Progman", video, false, false, false},
+		{"the taskbar", 1, "Shell_TrayWnd", video, false, false, false},
+		{"Pointy's own window", 1, "mygo", video, false, true, false},
+		{"something topmost filling the screen, not in front", 2, "Notepad", maximized, true, false, false},
 	} {
-		if got := fullscreen(tt.state, tt.class, tt.fg, monitor, tt.own); got != tt.want {
+		if got := fullscreen(tt.state, tt.class, tt.fg, monitor, tt.zoomed, tt.own); got != tt.want {
 			t.Errorf("%s: %v, want %v", tt.name, got, tt.want)
 		}
 	}
