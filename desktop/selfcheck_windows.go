@@ -1,11 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"image"
+	"runtime"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/egoist/mygo"
@@ -16,37 +19,53 @@ import (
 )
 
 var (
-	user32                = win32.NewLazySystemDLL("user32.dll")
-	gdi32                 = win32.NewLazySystemDLL("gdi32.dll")
-	procGetWindowRect     = user32.NewProc("GetWindowRect")
-	procGetAncestor       = user32.NewProc("GetAncestor")
-	procGetWindow         = user32.NewProc("GetWindow")
-	procWindowFromPoint   = user32.NewProc("WindowFromPoint")
-	procGetWindowLongPtrW = user32.NewProc("GetWindowLongPtrW")
-	procEnumChildWindows  = user32.NewProc("EnumChildWindows")
-	procSendMessageW      = user32.NewProc("SendMessageW")
-	procSetCursorPos      = user32.NewProc("SetCursorPos")
-	procSendInput         = user32.NewProc("SendInput")
-	procLoadCursorW       = user32.NewProc("LoadCursorW")
-	procGetIconInfo       = user32.NewProc("GetIconInfo")
-	procGetDpiForSystem   = user32.NewProc("GetDpiForSystem")
-	procGetBitmapBits     = gdi32.NewProc("GetBitmapBits")
-	procDeleteObject      = gdi32.NewProc("DeleteObject")
+	user32                  = win32.NewLazySystemDLL("user32.dll")
+	gdi32                   = win32.NewLazySystemDLL("gdi32.dll")
+	shell32                 = win32.NewLazySystemDLL("shell32.dll")
+	procGetWindowRect       = user32.NewProc("GetWindowRect")
+	procGetAncestor         = user32.NewProc("GetAncestor")
+	procGetWindow           = user32.NewProc("GetWindow")
+	procWindowFromPoint     = user32.NewProc("WindowFromPoint")
+	procGetWindowLongPtrW   = user32.NewProc("GetWindowLongPtrW")
+	procEnumChildWindows    = user32.NewProc("EnumChildWindows")
+	procSendMessageW        = user32.NewProc("SendMessageW")
+	procSetCursorPos        = user32.NewProc("SetCursorPos")
+	procSendInput           = user32.NewProc("SendInput")
+	procLoadCursorW         = user32.NewProc("LoadCursorW")
+	procGetIconInfo         = user32.NewProc("GetIconInfo")
+	procGetDpiForSystem     = user32.NewProc("GetDpiForSystem")
+	procIsWindow            = user32.NewProc("IsWindow")
+	procIsZoomed            = user32.NewProc("IsZoomed")
+	procShowWindow          = user32.NewProc("ShowWindow")
+	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
+	procBringWindowToTop    = user32.NewProc("BringWindowToTop")
+	procAttachThreadInput   = user32.NewProc("AttachThreadInput")
+	procFindWindowW         = user32.NewProc("FindWindowW")
+	procMonitorFromWindow   = user32.NewProc("MonitorFromWindow")
+	procGetMonitorInfoW     = user32.NewProc("GetMonitorInfoW")
+	procGetBitmapBits       = gdi32.NewProc("GetBitmapBits")
+	procDeleteObject        = gdi32.NewProc("DeleteObject")
+	procSHAppBarMessage     = shell32.NewProc("SHAppBarMessage")
 )
 
 const (
-	gaRoot          = 2
-	gwOwner         = 4
-	emGetSel        = 0x00B0
-	emSetSel        = 0x00B1
-	inputMouse      = 0
-	mouseLeftDown   = 0x0002
-	mouseLeftUp     = 0x0004
-	mouseRightDown  = 0x0008
-	mouseRightUp    = 0x0010
-	mouseWheel      = 0x0800
-	idcArrow        = 32512
-	gwlExStyleIndex = ^uintptr(19)
+	gaRoot                  = 2
+	gwOwner                 = 4
+	emGetSel                = 0x00B0
+	emSetSel                = 0x00B1
+	inputMouse              = 0
+	mouseLeftDown           = 0x0002
+	mouseLeftUp             = 0x0004
+	mouseRightDown          = 0x0008
+	mouseRightUp            = 0x0010
+	mouseWheel              = 0x0800
+	idcArrow                = 32512
+	gwlExStyleIndex         = ^uintptr(19)
+	swMaximize              = 3
+	swRestore               = 9
+	monitorDefaultToNearest = 2
+	abmGetState             = 0x00000004
+	abmSetState             = 0x0000000A
 )
 
 type winDriver struct{}
@@ -237,4 +256,142 @@ func (winDriver) cursorFingerprint() string {
 		procDeleteObject.Call(bmp)
 	}
 	return fmt.Sprintf("%016x", sum.Sum64())
+}
+
+type monitorInfo struct {
+	Size    uint32
+	Monitor wrect
+	Work    wrect
+	Flags   uint32
+}
+
+func (winDriver) monitorRect(id desktop.WindowID) (desktop.Rect, bool) {
+	m, _, _ := procMonitorFromWindow.Call(uintptr(id), monitorDefaultToNearest)
+	if m == 0 {
+		return desktop.Rect{}, false
+	}
+	info := monitorInfo{Size: uint32(unsafe.Sizeof(monitorInfo{}))}
+	ok, _, _ := procGetMonitorInfoW.Call(m, uintptr(unsafe.Pointer(&info)))
+	r := info.Monitor
+	return desktop.Rect{int(r.Left), int(r.Top), int(r.Right - r.Left), int(r.Bottom - r.Top)}, ok != 0
+}
+
+func (winDriver) isMaximized(id desktop.WindowID) bool {
+	z, _, _ := procIsZoomed.Call(uintptr(id))
+	return z != 0
+}
+
+func (d winDriver) maximize(id desktop.WindowID) error {
+	if ok, _, _ := procIsWindow.Call(uintptr(id)); ok == 0 {
+		return errors.New("target window is gone")
+	}
+	procShowWindow.Call(uintptr(id), swMaximize)
+	deadline := time.Now().Add(time.Second)
+	for !d.isMaximized(id) {
+		if time.Now().After(deadline) {
+			return errors.New("window did not become maximized")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return nil
+}
+
+func (d winDriver) restore(id desktop.WindowID) error {
+	if ok, _, _ := procIsWindow.Call(uintptr(id)); ok == 0 {
+		return errors.New("target window is gone")
+	}
+	procShowWindow.Call(uintptr(id), swRestore)
+	deadline := time.Now().Add(time.Second)
+	for d.isMaximized(id) {
+		if time.Now().After(deadline) {
+			return errors.New("window stayed maximized after SW_RESTORE")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return nil
+}
+
+func (winDriver) focus(id desktop.WindowID) bool {
+	target := win32.HWND(id)
+	if ok, _, _ := procIsWindow.Call(uintptr(id)); ok == 0 {
+		return false
+	}
+	if win32.GetForegroundWindow() == target {
+		return true
+	}
+	procSetForegroundWindow.Call(uintptr(id))
+	if win32.GetForegroundWindow() != target {
+		forceForeground(uintptr(id))
+	}
+	for range 10 {
+		if win32.GetForegroundWindow() == target {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return win32.GetForegroundWindow() == target
+}
+
+func forceForeground(h uintptr) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	fgTID, _ := win32.GetWindowThreadProcessId(win32.GetForegroundWindow(), nil)
+	curTID := win32.GetCurrentThreadId()
+	var attached uintptr
+	if fgTID != 0 && fgTID != curTID {
+		attached, _, _ = procAttachThreadInput.Call(uintptr(curTID), uintptr(fgTID), 1)
+	}
+	procBringWindowToTop.Call(h)
+	procSetForegroundWindow.Call(h)
+	if attached != 0 {
+		procAttachThreadInput.Call(uintptr(curTID), uintptr(fgTID), 0)
+	}
+}
+
+type appBarData struct {
+	Size            uint32
+	Wnd             uintptr
+	CallbackMessage uint32
+	Edge            uint32
+	Rect            wrect
+	Param           uintptr
+}
+
+func findTaskbar() uintptr {
+	cls, _ := win32.UTF16PtrFromString("Shell_TrayWnd")
+	h, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(cls)), 0)
+	return h
+}
+
+func (winDriver) taskbarState() (uint, error) {
+	tray := findTaskbar()
+	if tray == 0 {
+		return 0, errors.New("no taskbar window (Shell_TrayWnd)")
+	}
+	abd := appBarData{Size: uint32(unsafe.Sizeof(appBarData{})), Wnd: tray}
+	s, _, _ := procSHAppBarMessage.Call(abmGetState, uintptr(unsafe.Pointer(&abd)))
+	return uint(s), nil
+}
+
+func (d winDriver) setTaskbarState(want uint) error {
+	tray := findTaskbar()
+	if tray == 0 {
+		return errors.New("no taskbar window (Shell_TrayWnd)")
+	}
+	abd := appBarData{Size: uint32(unsafe.Sizeof(appBarData{})), Wnd: tray, Param: uintptr(want)}
+	procSHAppBarMessage.Call(abmSetState, uintptr(unsafe.Pointer(&abd)))
+	deadline := time.Now().Add(time.Second)
+	for {
+		got, err := d.taskbarState()
+		if err != nil {
+			return err
+		}
+		if got&taskbarAutoHide == want&taskbarAutoHide {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("taskbar state remained %#x, want %#x", got, want)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

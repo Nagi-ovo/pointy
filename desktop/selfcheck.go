@@ -46,6 +46,13 @@ type selfDriver interface {
 	move(desktop.Point) error
 	// screen copies r from the screen, Pointy's windows included.
 	screen(desktop.Rect) (image.Image, error)
+	monitorRect(desktop.WindowID) (desktop.Rect, bool)
+	isMaximized(desktop.WindowID) bool
+	maximize(desktop.WindowID) error
+	restore(desktop.WindowID) error
+	focus(desktop.WindowID) bool
+	taskbarState() (uint, error)
+	setTaskbarState(uint) error
 }
 
 type report struct {
@@ -175,6 +182,8 @@ func runChecks(r *report, d desktop.Desktop, drv selfDriver) {
 	checkCursor(r, d, drv)
 	checkHook(r, d, drv, fg, target)
 	checkPick(r, d, drv, fg, target)
+	checkMaximized(r, d, drv, fg)
+	checkClippedHighlight(r, d, drv)
 
 	d.AllowAnyForeground()
 	r.info("AllowAnyForeground", "called")

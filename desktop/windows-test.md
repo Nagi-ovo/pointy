@@ -21,7 +21,7 @@ ARM 的机器在 `go build` 前加一句 `$env:GOARCH = 'arm64'`。也可以直�
 
 自检会把每个平台调用跑一遍，最后用共用的状态机真的指认一次：把鼠标移到目标程序的正文上，盖上一层浮层，自己点一下确认，再检查卡片会拿到什么。
 
-跑法：先打开要测的程序，然后在 `desktop` 目录里执行下面几行，接着在 5 秒内点一下那个程序的窗口，让它到最前面。之后大约 40 秒别碰鼠标，自检会自己移动鼠标、点击、滚动。
+跑法：先打开要测的程序，然后在 `desktop` 目录里执行下面几行，接着在 5 秒内点一下那个程序的窗口，让它到最前面。之后大约 40 秒别碰鼠标，自检会自己移动鼠标、点击、滚动，还会把目标窗口最大化、临时打开任务栏自动隐藏，以及开一个长滚动页面的测试窗口，跑完都会恢复原状。
 
 ```powershell
 $env:POINTY_ROOT = (Resolve-Path ..).Path          # 让它找到 assets\cursor 里的光标
@@ -40,6 +40,8 @@ Get-Content out\selfcheck.txt
 - `pick opens a card`、`the card holds the target's text`：点一下以后，卡片拿到的是记事本里的文字。
 - `the pick's picture leaves the overlay out`：自检的浮层在目标正中画了一块洋红色，`pick-picture.png` 里不能有它。真的浮层也是这样，Pointy 截图时会把自己的窗口排除在外。这要求 Windows 10 2004 或更新的版本。
 - `the confirming click never reaches the target`、`pointing puts the cursor back`、`the card lets the held box go`：确认的那一下点击被拦住了，光标换回来了，卡片放手后框也消失了。
+- `a maximized window is not full screen`、`a maximized window over an auto-hidden taskbar is not full screen`：目标窗口最大化时（包括临时打开任务栏自动隐藏、窗口盖满整块屏幕时）不算全屏。
+- `the highlight stays inside the window`（WebView2 未报出展开高度时为 `SKIP highlight clipping`）：可滚动长内容区的 UIA 矩形超出窗口时，指认画的高亮框仍裁在窗口内。
 
 ## 第二步：完整流程
 

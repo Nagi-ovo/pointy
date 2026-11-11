@@ -75,7 +75,7 @@ jobs:
             }
           }
           Stop-Process -Id $notepad.Id -ErrorAction SilentlyContinue
-          foreach ($check in 'pick opens a card', "the pick's picture leaves the overlay out") {
+          foreach ($check in 'pick opens a card', "the pick's picture leaves the overlay out", 'a maximized window is not full screen') {
             if (-not (Select-String -LiteralPath $out -Pattern "^PASS $([regex]::Escape($check)):" -Quiet)) {
               Add-Content -LiteralPath $out "FAIL ${check}: did not pass"
             }
