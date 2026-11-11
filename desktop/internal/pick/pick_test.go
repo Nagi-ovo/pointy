@@ -3,6 +3,7 @@ package pick
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/pointylab/pointy/desktop/internal/browser"
 	"github.com/pointylab/pointy/desktop/internal/config"
@@ -145,4 +146,57 @@ func TestPageRefusingAPasswordFieldSaysWhy(t *testing.T) {
 	d.OpenGrab = func(g contract.Grab, _ Card) { t.Errorf("opened a card on %+v", g) }
 	New(d).Pick(desktop.Point{X: 500, Y: 300})
 	r.hinted(t, contract.BlockPasswordField)
+}
+
+// waitingBrowser holds each pick until it is cancelled, the way a page
+// waits for a click.
+type waitingBrowser struct {
+	started   chan struct{}
+	cancelled chan struct{}
+}
+
+func (*waitingBrowser) Count() int { return 1 }
+func (b *waitingBrowser) PickInBrowser(ctx context.Context, _ desktop.BrowserKind, _ desktop.Point, _ string) browser.BrowserPick {
+	b.started <- struct{}{}
+	<-ctx.Done()
+	b.cancelled <- struct{}{}
+	return browser.BrowserPick{Outcome: browser.PickCancelled}
+}
+
+func TestShakingAgainReplacesAPickWaitingInThePage(t *testing.T) {
+	r := newRig(t)
+	r.d.front = &desktop.Foreground{ID: 8, PID: 8, Exe: "google chrome", Title: "Example"}
+	b := &waitingBrowser{started: make(chan struct{}, 2), cancelled: make(chan struct{}, 2)}
+	d := r.deps()
+	d.Suppressed = func() bool { return false }
+	d.Browser = b
+	d.Settings = config.LoadSettings(t.TempDir())
+	d.Fullscreen = func() bool { return false }
+	d.CardFocused = func() bool { return false }
+	p := New(d)
+
+	first := make(chan struct{})
+	go func() { p.Pick(desktop.Point{X: 500, Y: 300}); close(first) }()
+	waitSignal(t, b.started, "the first pick to reach the page")
+	if !p.shakeAllowed() {
+		t.Fatal("a shake was ignored while a pick waited in the page")
+	}
+
+	second := make(chan struct{})
+	go func() { p.Pick(desktop.Point{X: 600, Y: 300}); close(second) }()
+	waitSignal(t, b.cancelled, "the first pick to be cancelled")
+	waitSignal(t, first, "the first pick to end")
+	waitSignal(t, b.started, "the second pick to reach the page")
+	p.Cancel()
+	waitSignal(t, b.cancelled, "the second pick to be cancelled")
+	waitSignal(t, second, "the second pick to end")
+}
+
+func waitSignal[T any](t *testing.T, c <-chan T, what string) {
+	t.Helper()
+	select {
+	case <-c:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s", what)
+	}
 }

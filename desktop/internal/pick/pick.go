@@ -23,6 +23,7 @@ import (
 
 const (
 	selectionWait  = 1500 * time.Millisecond
+	replaceWait    = time.Second
 	ignoreLogEvery = 30 * time.Second
 	thinText       = 30
 )
@@ -78,10 +79,12 @@ type Picker struct {
 	d Deps
 
 	active        atomic.Bool
+	inBrowser     atomic.Bool
 	fallbackNoted atomic.Bool
 
 	mu        sync.Mutex
 	cancel    context.CancelFunc
+	done      chan struct{}
 	lastQuiet time.Time
 }
 
@@ -103,6 +106,29 @@ func (p *Picker) Cancel() {
 	}
 }
 
+// replaceBrowserPick ends a pick still waiting in a page when the mouse is
+// shaken again: the user has most likely moved on or missed it, and should
+// not wait out its timeout (issue #4). It reports whether that pick ended.
+func (p *Picker) replaceBrowserPick() bool {
+	if !p.inBrowser.Load() {
+		return false
+	}
+	p.mu.Lock()
+	cancel, done := p.cancel, p.done
+	p.mu.Unlock()
+	if cancel == nil || done == nil {
+		return false
+	}
+	p.d.log("pick-restart", "replaced a browser pick")
+	cancel()
+	select {
+	case <-done:
+		return true
+	case <-time.After(replaceWait):
+		return false
+	}
+}
+
 func (p *Picker) shakeAllowed() bool {
 	s := p.d.Settings.Get()
 	reason, ignore := "", true
@@ -112,7 +138,7 @@ func (p *Picker) shakeAllowed() bool {
 		reason = "fullscreen"
 	case s.DND:
 		reason = "dnd"
-	case p.active.Load():
+	case p.active.Load() && !p.inBrowser.Load():
 		reason = "picking"
 	case p.d.CardFocused():
 		reason = "card-focused"
@@ -152,19 +178,25 @@ func (p *Picker) note(f fallback) *contract.GrabNote {
 // Pick opens a card on what is at the mouse: the page element the
 // extension picks, the selected text, or the control the user points at.
 func (p *Picker) Pick(at desktop.Point) {
-	if p.d.Suppressed() || !p.active.CompareAndSwap(false, true) {
+	if p.d.Suppressed() {
 		return
 	}
-	defer p.active.Store(false)
+	if !p.active.CompareAndSwap(false, true) && (!p.replaceBrowserPick() || !p.active.CompareAndSwap(false, true)) {
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	done := make(chan struct{})
 	p.mu.Lock()
-	p.cancel = cancel
+	p.cancel, p.done = cancel, done
 	p.mu.Unlock()
 	defer func() {
+		cancel()
 		p.mu.Lock()
-		p.cancel = nil
+		p.cancel, p.done = nil, nil
 		p.mu.Unlock()
+		p.inBrowser.Store(false)
+		p.active.Store(false)
+		close(done)
 	}()
 
 	d := p.d.Desktop
@@ -188,7 +220,9 @@ func (p *Picker) Pick(at desktop.Point) {
 	f := noFallback
 	if kind, ok := d.Browser(fg.Exe); ok {
 		if p.d.Browser.Count() > 0 {
+			p.inBrowser.Store(true)
 			r := p.d.Browser.PickInBrowser(ctx, kind, p.devicePixels(at), "")
+			p.inBrowser.Store(false)
 			switch r.Outcome {
 			case browser.Picked:
 				g := contract.Grab{Source: source, Method: contract.MethodPick, URL: r.URL, PageTitle: r.PageTitle, Element: r.Element, Image: r.Image}
