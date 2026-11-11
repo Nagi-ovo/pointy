@@ -160,9 +160,10 @@ function focusRect(rect, point, scale, zoom = 1) {
 /**
  * 进入指认，直到左键或空格确认 / Esc 或右键 / 超时。
  * @param note 提示条后面补的一句（比如浏览器扩展没连上）
+ * @param owner 被指的程序窗口（地址），留着的高亮框挂在它下面；不给就用前台窗口
  * @returns {Promise<{ element, image } | null>}
  */
-function pickNative({ note } = {}) {
+function pickNative({ note, owner: ownerHint } = {}) {
   const cursor = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursor)
   const overlay = new BrowserWindow({
@@ -278,7 +279,7 @@ function pickNative({ note } = {}) {
         overlay.webContents.send('hold')
         // 和卡片一样挂到来源程序下面：在那个程序上面，别的程序切到前面就把它盖住；
         // 来源程序找不到时才退回置顶。后弹出的卡片挂在同一个程序下，会在它上面
-        const owner = foregroundAddress()
+        const owner = ownerHint || foregroundAddress()
         overlay.setAlwaysOnTop(false)
         try { if (owner) setOwner(overlay.getNativeWindowHandle().readBigUInt64LE(0), owner); else overlay.setAlwaysOnTop(true, 'floating') } catch { overlay.setAlwaysOnTop(true, 'floating') }
         overlay.setIgnoreMouseEvents(true)

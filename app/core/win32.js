@@ -18,6 +18,7 @@ const GetWindowRect = user32.func('bool __stdcall GetWindowRect(void *hwnd, _Out
 const MonitorFromWindow = user32.func('void * __stdcall MonitorFromWindow(void *hwnd, uint32 flags)')
 const GetMonitorInfoW = user32.func('bool __stdcall GetMonitorInfoW(void *monitor, _Inout_ MONITORINFO *info)')
 const GetClassNameW = user32.func('int __stdcall GetClassNameW(void *hwnd, _Out_ uint16 *name, int max)')
+const IsZoomed = user32.func('bool __stdcall IsZoomed(void *hwnd)')
 
 function notificationState() {
   const out = [0]
@@ -37,6 +38,9 @@ function foregroundCoversMonitor(ownHwnds) {
   const addr = koffi.address(hwnd)
   if (ownHwnds.some(h => h === addr)) return false
   if (SHELL_CLASSES.has(className(hwnd))) return false
+  // 最大化窗口四周有看不见的边框，矩形会超出屏幕几像素；任务栏自动隐藏时工作区就是整块屏，会被误判成全屏（issue #3）。
+  // 全屏游戏、F11 都不是"最大化"状态，不受影响
+  if (IsZoomed(hwnd)) return false
   const rect = {}
   if (!GetWindowRect(hwnd, rect)) return false
   const info = { cbSize: koffi.sizeof(MONITORINFO), rcMonitor: {}, rcWork: {}, dwFlags: 0 }

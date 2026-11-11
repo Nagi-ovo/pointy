@@ -39,13 +39,14 @@ function cardBounds(height, width = cardWidth) {
 /**
  * 打开一张卡片。grab 是指认 / 选区拿到的东西（pick/ 产出的格式）
  * @param releasePick 指认留着的高亮框，卡片关掉或收起时撤掉
+ * @param ownerHint 被指的程序窗口（地址）；不给就用前台窗口
  */
-function openCard(init, releasePick) {
+function openCard(init, releasePick, ownerHint) {
   if (suppressed() && !TEST_HIDDEN && !offscreenCards) return releasePick?.()
   // 眼前这张卡片让位：问过问题的缩成胶囊，没问过的关掉；收起的卡片不动
   setAsideCard()
   // 卡片跟着叫出它的那个程序：在它上面，切到别的程序就被盖住（配对卡片和找不到来源时照旧置顶）
-  const fg = init.mode === 'pair' ? 0n : foregroundAddress()
+  const fg = init.mode === 'pair' ? 0n : ownerHint || foregroundAddress()
   const mine = ownHandles()
   const owner = fg && !mine.includes(fg) ? fg : 0n
   card = new BrowserWindow({
