@@ -604,6 +604,27 @@ const gripEnd = (e) => { if (grip.hasPointerCapture(e.pointerId)) grip.releasePo
 grip.addEventListener('pointerup', gripEnd)
 grip.addEventListener('pointercancel', gripEnd)
 
+// ---------- 对话区贴底 ----------
+// 停在底部就一直贴着底：出字、进度行变高、输入框变矮、窗口改高度之后都重新滚到底。
+// 往上翻了就松开，翻回底部再贴上；下面还有内容时底边出一个「回到最新」
+const toLatest = $('to-latest')
+let stick = true
+let pinnedAt = 0 // 上次贴底时的 scrollTop：比它小说明是往上翻了，内容变长不算
+const gapBelow = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight
+function pin() {
+  if (stick) { thread.scrollTop = thread.scrollHeight; pinnedAt = thread.scrollTop }
+  toLatest.hidden = gapBelow() < 32
+}
+const threadSize = new ResizeObserver(pin)
+threadSize.observe(thread)
+new MutationObserver((records) => { for (const r of records) for (const n of r.addedNodes) threadSize.observe(n) }).observe(thread, { childList: true })
+thread.addEventListener('scroll', () => {
+  const atBottom = gapBelow() < 32
+  if (atBottom) { stick = true; pinnedAt = thread.scrollTop } else if (thread.scrollTop < pinnedAt) stick = false
+  toLatest.hidden = atBottom
+})
+toLatest.addEventListener('click', () => { stick = true; pin() })
+
 // ---------- 发问 ----------
 function addTurn(youText) {
   thread.hidden = false
@@ -614,7 +635,8 @@ function addTurn(youText) {
   thread.append(activity)
   reply = { el, text: '' }
   // 刚问的这句要看得见
-  thread.scrollTop = thread.scrollHeight
+  stick = true
+  pin()
 }
 
 async function send(instruction, label) {
@@ -770,11 +792,8 @@ function keyLinks(text) {
   return out.slice(0, 3)
 }
 
-// 只有停在底部时才跟着新字往下滚；用户往上翻了就不拽回来，翻回底部再继续跟
 function renderReply() {
-  const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 32
   reply.el.innerHTML = renderMarkdown(reply.text)
-  if (atBottom) thread.scrollTop = thread.scrollHeight
 }
 
 // 问过就开那个会话；没问过就开选中的目标会话；目标是"新任务"时只把 agent 提到前台
@@ -937,7 +956,10 @@ window.card.onAgent((msg) => {
       if (msg.reason !== 'completed') activity.textContent = `结束（${msg.reason}）`
       if (reply?.text) addAfterLinks(progressFull ? keyLinks(reply.text) : [])
       // 完整档的回答长，出字时一路滚到了底；做完回到这一轮回答的开头，先看到第一句结论
-      if (progressFull && reply?.el && reply.text.length > 400) thread.scrollTop = Math.max(0, reply.el.offsetTop - thread.offsetTop - 8)
+      if (progressFull && reply?.el && reply.text.length > 400) {
+        stick = false
+        thread.scrollTop = Math.max(0, reply.el.offsetTop - thread.offsetTop - 8)
+      }
       allText += '\n\n'
       fitHeight()
       window.card.rendered('answered')
