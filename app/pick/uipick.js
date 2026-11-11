@@ -100,6 +100,26 @@ const CONTROL_LABEL = {
 
 const label = (c) => CONTROL_LABEL[c?.control] ?? '控件'
 
+/** 两个矩形（物理像素 [x, y, w, h]）的交集；不相交时 undefined */
+function intersect(a, b) {
+  const x = Math.max(a[0], b[0])
+  const y = Math.max(a[1], b[1])
+  const w = Math.min(a[0] + a[2], b[0] + b[2]) - x
+  const h = Math.min(a[1] + a[3], b[1] + b[3]) - y
+  return w > 0 && h > 0 ? [x, y, w, h] : undefined
+}
+
+/**
+ * 控件露在屏幕上的那一块：能滚动的内容区（Electron/Chromium 的聊天记录、长网页）报的是整段内容展开后的大小，
+ * 会比窗口高出几千像素，直接画框就顶满整块屏。和所在窗口、显示器各取一次交集
+ */
+function visibleRect(rect, win, display) {
+  if (!rect) return rect
+  const b = screen.dipToScreenRect(null, display.bounds)
+  const onScreen = intersect(win ? intersect(rect, win) ?? rect : rect, [b.x, b.y, b.width, b.height])
+  return onScreen ?? rect
+}
+
 /** 截一块屏幕区域（物理像素），返回 PNG data URL */
 async function captureRect(display, rect) {
   const scale = display.scaleFactor
@@ -196,9 +216,11 @@ function pickNative({ note, owner: ownerHint } = {}) {
       try {
         point = screen.dipToScreenPoint(screen.getCursorScreenPoint())
         const r = await uiaRequest(`point ${point.x} ${point.y}`, 1000)
-        chain = (r?.chain ?? []).filter(c => c.rect && c.rect[2] > 4 && c.rect[3] > 4)
+        const found = (r?.chain ?? []).filter(c => c.rect && c.rect[2] > 4 && c.rect[3] > 4)
         // 只给最深那个控件标空壳（往上调范围的祖先都当普通控件）
-        if (chain[0] && r?.chain?.[0] && chain[0].rect === r.chain[0].rect) chain[0].opaque = isOpaque({ ...chain[0], kids: r.leafKids, readable: r.leafReadable, win: r.win })
+        const leafKept = !!found[0] && found[0] === r?.chain?.[0]
+        chain = found.map(c => ({ ...c, rect: visibleRect(c.rect, r.win, display) }))
+        if (leafKept) chain[0].opaque = isOpaque({ ...chain[0], kids: r.leafKids, readable: r.leafReadable, win: r.win })
         draw()
       } finally {
         busy = false
@@ -267,6 +289,7 @@ function pickNative({ note, owner: ownerHint } = {}) {
       await new Promise(r => setTimeout(r, 150))
       const detail = await uiaRequest(`element ${point.x} ${point.y} ${level}`, 3000)
       if (!detail?.ok) { release(); return resolve(detail?.isPassword ? { blocked: '指的是密码框' } : null) }
+      detail.rect = visibleRect(detail.rect, detail.win, display)
       // 空壳程序（QQ、网易云）：截图只截跟着鼠标的小框，能读到元素的程序照旧截整块
       const whole = isWholeWindow({ rect: detail.rect, win: detail.win, control: detail.control })
       const opaque = isOpaque({ cls: detail.className, rect: detail.rect, kids: detail.kids, readable: detail.readable, win: detail.win, control: detail.control }) && (whole || !(detail.text ?? '').trim())
