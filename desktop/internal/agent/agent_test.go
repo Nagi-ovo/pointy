@@ -23,9 +23,18 @@ type fakePlugin struct {
 	ok map[string]any
 }
 
-func connect(t *testing.T, url string) *fakePlugin {
+// testServer serves one DSH relay. attached receives once Pointy has taken
+// over each plugin connection, which happens after it sends hello-ok.
+type testServer struct {
+	url      string
+	attached chan struct{}
+}
+
+// connect returns a plugin that finished the handshake and that Pointy has
+// taken over, so a.Request reaches it.
+func (s *testServer) connect(t *testing.T) *fakePlugin {
 	t.Helper()
-	ws, _, err := websocket.Dial(context.Background(), url, nil)
+	ws, _, err := websocket.Dial(context.Background(), s.url, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +44,11 @@ func connect(t *testing.T, url string) *fakePlugin {
 	p.send(map[string]any{"type": "hello", "nonce": "n", "proof": server.Sign(token, "plugin|"+ch["type+nonce"].(string))})
 	if p.ok = p.read(); p.ok["type"] != "hello-ok" {
 		t.Fatalf("handshake %v", p.ok)
+	}
+	select {
+	case <-s.attached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Pointy did not take over the plugin")
 	}
 	return p
 }
@@ -61,14 +75,20 @@ func (p *fakePlugin) send(v any) {
 	}
 }
 
-func serve(t *testing.T, a *DSH) string {
+func serve(t *testing.T, a *DSH) *testServer {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ln.Close() })
-	go server.Serve(ln, server.Routes{Token: token, Managed: a.Managed, Plugin: a.Attach, Extension: func(*server.Conn, server.Hello, string) server.Handler { return nil }})
-	return "ws://" + ln.Addr().String()
+	s := &testServer{url: "ws://" + ln.Addr().String(), attached: make(chan struct{}, 8)}
+	attach := func(c *server.Conn) server.Handler {
+		h := a.Attach(c)
+		s.attached <- struct{}{}
+		return h
+	}
+	go server.Serve(ln, server.Routes{Token: token, Managed: a.Managed, Plugin: attach, Extension: func(*server.Conn, server.Hello, string) server.Handler { return nil }})
+	return s
 }
 
 func waitFor(t *testing.T, what string, ok func() bool) {
@@ -83,10 +103,9 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 
 func TestSecondPluginReplacesFirst(t *testing.T) {
 	a := New(Deps{}, HostOptions{})
-	url := serve(t, a)
-	first := connect(t, url)
-	waitFor(t, "first plugin", a.Connected)
-	second := connect(t, url)
+	srv := serve(t, a)
+	first := srv.connect(t)
+	second := srv.connect(t)
 	if m := first.read(); m["error"] == nil {
 		t.Fatalf("first plugin got %v, want it closed", m)
 	}
@@ -113,7 +132,7 @@ func TestRelay(t *testing.T) {
 		OpenURL:  func(u string) { opened <- u },
 		FocusTab: func(string) bool { return false },
 	}, HostOptions{})
-	p := connect(t, serve(t, a))
+	p := serve(t, a).connect(t)
 
 	if a.Request(jsontext.Value(`{"type":"focus"}`)) {
 		t.Fatal("relayed a type cards may not send")
@@ -159,7 +178,7 @@ func TestRelay(t *testing.T) {
 func TestOpenInWebUI(t *testing.T) {
 	focused := make(chan string, 1)
 	a := New(Deps{FocusTab: func(o string) bool { focused <- o; return true }, OpenURL: func(string) { t.Error("opened the desktop app for a web UI") }}, HostOptions{})
-	p := connect(t, serve(t, a))
+	p := serve(t, a).connect(t)
 	p.send(map[string]any{"type": "ui", "kind": "web", "origin": "http://127.0.0.1:3093"})
 	p.send(map[string]any{"type": "ready"})
 	waitFor(t, "ready", func() bool { return a.Status().Connected })
@@ -192,7 +211,7 @@ func TestOrphaned(t *testing.T) {
 func TestPluginQuit(t *testing.T) {
 	unmanagedQuit := make(chan struct{}, 1)
 	unmanaged := New(Deps{}, HostOptions{Managed: false, Quit: func() { unmanagedQuit <- struct{}{} }})
-	p1 := connect(t, serve(t, unmanaged))
+	p1 := serve(t, unmanaged).connect(t)
 	p1.send(map[string]any{"type": "quit"})
 	p1.send(map[string]any{"type": "ready", "plugin": "1.0.0"})
 	waitFor(t, "ready after ignored quit", func() bool { return unmanaged.Status().Version == "1.0.0" })
@@ -205,7 +224,7 @@ func TestPluginQuit(t *testing.T) {
 	managedQuit := make(chan struct{}, 1)
 	logged := make(chan string, 1)
 	managed := New(Deps{Log: func(kind string, _ any) { logged <- kind }}, HostOptions{Managed: true, Quit: func() { managedQuit <- struct{}{} }})
-	p2 := connect(t, serve(t, managed))
+	p2 := serve(t, managed).connect(t)
 	p2.send(map[string]any{"type": "quit"})
 	select {
 	case <-managedQuit:
@@ -299,9 +318,9 @@ func TestAdoptOnReady(t *testing.T) {
 	quit := make(chan struct{}, 1)
 	a := New(Deps{}, HostOptions{Quit: func() { quit <- struct{}{} }})
 	t.Cleanup(a.host.stop)
-	url := serve(t, a)
+	srv := serve(t, a)
 
-	p1 := connect(t, url)
+	p1 := srv.connect(t)
 	if p1.ok["managed"] != false {
 		t.Fatalf("hello-ok %v, want managed: false", p1.ok)
 	}
@@ -313,7 +332,7 @@ func TestAdoptOnReady(t *testing.T) {
 	p1.send(map[string]any{"type": "ready", "plugin": "0.5.2", "hostPid": os.Getpid()})
 	waitFor(t, "adopted", a.Managed)
 
-	p2 := connect(t, url)
+	p2 := srv.connect(t)
 	if p2.ok["managed"] != true {
 		t.Fatalf("hello-ok %v, want managed: true", p2.ok)
 	}
@@ -333,7 +352,7 @@ func TestAdoptStartsOrphanCheck(t *testing.T) {
 	quit := make(chan struct{}, 1)
 	a := New(Deps{}, HostOptions{Quit: func() { quit <- struct{}{} }})
 	t.Cleanup(a.host.stop)
-	p := connect(t, serve(t, a))
+	p := serve(t, a).connect(t)
 	p.send(map[string]any{"type": "ready", "plugin": "0.5.2", "hostPid": deadPID(t)})
 	waitFor(t, "adopted", a.Managed)
 	p.ws.Close(websocket.StatusNormalClosure, "")
