@@ -6,7 +6,7 @@ import path from 'node:path'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { activityOf } from './activity.ts'
 import { composeAsk, composeFirst, isOurPreamble } from './compose.ts'
-import { APP_DIR, cleanOldApps, type Logger, MAX_REPLACE_ATTEMPTS, peerAction, petLaunch, PLUGIN_ROOT } from './runtime.ts'
+import { APP_DIR, cleanOldApps, type Logger, MAX_REPLACE_ATTEMPTS, peerAction, petLaunch, PLUGIN_ROOT, readyMessage } from './runtime.ts'
 
 interface Route { provider: string, model: string }
 interface Agent { followup(message: unknown): void }
@@ -145,12 +145,13 @@ function openPetLog() {
   return fs.openSync(PET_LOG, size > PET_LOG_MAX ? 'w' : 'a')
 }
 
-function launchPet(logger: Logger) {
+function launchPet(logger: Logger): boolean {
   let launch
   try {
     launch = petLaunch(logger, PET_LOG, PLUGIN_VERSION)
   } catch (error) {
-    return logger.warn(`pointy: cannot start Pointy: ${(error as Error).message}`)
+    logger.warn(`pointy: cannot start Pointy: ${(error as Error).message}`)
+    return false
   }
   logger.info(`pointy: starting Pointy: ${launch.exe} ${launch.args.join(' ')}`)
   // DSH desktop runs plugins in Electron's node mode; apps Pointy opens must not inherit that.
@@ -170,8 +171,10 @@ function launchPet(logger: Logger) {
     child.on('exit', (code) => { if (code) logger.warn(`pointy: ${path.basename(launch.exe)} exited with ${code}, see ${PET_LOG}`) })
     child.unref()
     if (process.platform === 'win32') cleanOldApps(APP_DIR, PLUGIN_VERSION)
+    return true
   } catch (error) {
     logger.warn(`pointy: failed to start Pointy: ${(error as Error).message}`)
+    return false
   }
 }
 
@@ -186,7 +189,7 @@ class PetLink {
   waitUntil: number
   retryDelay: number | undefined
   replaceAttempts: number
-  onReady: () => void
+  onReady: (peer: { managed?: unknown }) => void
   onLost: () => void
   onUnreachable: () => void
 
@@ -265,7 +268,7 @@ class PetLink {
           this.logger.warn(`pointy: could not replace Pointy ${typeof msg.version === 'string' ? msg.version : 'unknown'} after ${MAX_REPLACE_ATTEMPTS} attempts; using it as is`)
         }
         this.authed = true
-        this.onReady()
+        this.onReady(msg)
       } else if (this.authed) {
         this.onMessage(msg)
       }
@@ -309,16 +312,17 @@ export function apply(ctx: DshContext) {
   let lineBusy = false
 
   const link = new PetLink(logger, handlePetMessage)
-  link.onReady = () => {
-    link.send({ type: 'ready', plugin: PLUGIN_VERSION })
+  let launchTried = false
+  let launchedPet = false
+  link.onReady = (peer) => {
+    link.send(readyMessage(PLUGIN_VERSION, peer, launchedPet, process.pid))
     link.send(uiInfo())
     for (const msg of lastState.values()) link.send(msg)
   }
-  let launchTried = false
   link.onUnreachable = () => {
     if (launchTried) return
     launchTried = true
-    launchPet(logger)
+    launchedPet = launchPet(logger)
   }
   link.onLost = () => {
     for (const answer of pendingApprovals.values()) answer('detach')

@@ -142,7 +142,7 @@ func start(home, root string, pages fs.FS, sys desktop.Desktop, logError func(st
 		err := server.Serve(ln, server.Routes{
 			Token:     token,
 			Version:   mygo.App.Version(),
-			Managed:   config.Managed(),
+			Managed:   dsh.Managed,
 			Plugin:    dsh.Attach,
 			Extension: exts.Authenticate,
 			Pair:      exts.Pair,

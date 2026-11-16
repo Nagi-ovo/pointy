@@ -141,6 +141,23 @@ export function peerAction(
 }
 
 /**
+ * A Pointy this plugin started can come back unmanaged when macOS reopens it
+ * without our environment; sending our PID lets it adopt us as its host.
+ */
+export function readyMessage(
+  pluginVersion: string,
+  peer: { managed?: unknown },
+  launchedPet: boolean,
+  hostPid: number,
+): { type: 'ready', plugin: string, hostPid?: number } {
+  return {
+    type: 'ready',
+    plugin: pluginVersion,
+    ...(launchedPet && peer.managed === false ? { hostPid } : {}),
+  }
+}
+
+/**
  * Earlier builds downloaded Electron into RUNTIME_DIR. The rest of ~/.pointy
  * holds the user's settings and stays. Windows keeps a running Electron's
  * files locked, so a failure waits for the next start.

@@ -96,7 +96,7 @@ func closedByServer(err error) bool {
 }
 
 func TestPluginProof(t *testing.T) {
-	url, plugins := start(t, Routes{Version: "0.5.2", Managed: true})
+	url, plugins := start(t, Routes{Version: "0.5.2", Managed: func() bool { return true }})
 	c := dial(t, url)
 	reply := c.hello(token)
 	proof, _ := reply["proof"].(string)

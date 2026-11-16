@@ -20,6 +20,7 @@ const token = "t"
 type fakePlugin struct {
 	t  *testing.T
 	ws *websocket.Conn
+	ok map[string]any
 }
 
 func connect(t *testing.T, url string) *fakePlugin {
@@ -29,11 +30,11 @@ func connect(t *testing.T, url string) *fakePlugin {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ws.CloseNow() })
-	p := &fakePlugin{t, ws}
+	p := &fakePlugin{t: t, ws: ws}
 	ch := p.read()
 	p.send(map[string]any{"type": "hello", "nonce": "n", "proof": server.Sign(token, "plugin|"+ch["type+nonce"].(string))})
-	if ok := p.read(); ok["type"] != "hello-ok" {
-		t.Fatalf("handshake %v", ok)
+	if p.ok = p.read(); p.ok["type"] != "hello-ok" {
+		t.Fatalf("handshake %v", p.ok)
 	}
 	return p
 }
@@ -66,7 +67,7 @@ func serve(t *testing.T, a *DSH) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ln.Close() })
-	go server.Serve(ln, server.Routes{Token: token, Plugin: a.Attach, Extension: func(*server.Conn, server.Hello, string) server.Handler { return nil }})
+	go server.Serve(ln, server.Routes{Token: token, Managed: a.Managed, Plugin: a.Attach, Extension: func(*server.Conn, server.Hello, string) server.Handler { return nil }})
 	return "ws://" + ln.Addr().String()
 }
 
@@ -291,5 +292,54 @@ func TestRemovedPluginGetsTimeToComeBack(t *testing.T) {
 	case <-quit:
 	case <-time.After(5 * time.Second):
 		t.Fatal("did not quit after the plugin was removed")
+	}
+}
+
+func TestAdoptOnReady(t *testing.T) {
+	quit := make(chan struct{}, 1)
+	a := New(Deps{}, HostOptions{Quit: func() { quit <- struct{}{} }})
+	t.Cleanup(a.host.stop)
+	url := serve(t, a)
+
+	p1 := connect(t, url)
+	if p1.ok["managed"] != false {
+		t.Fatalf("hello-ok %v, want managed: false", p1.ok)
+	}
+	p1.send(map[string]any{"type": "ready", "plugin": "0.5.2"})
+	waitFor(t, "ready", func() bool { return a.Status().Version == "0.5.2" })
+	if a.Managed() {
+		t.Fatal("managed without hostPid")
+	}
+	p1.send(map[string]any{"type": "ready", "plugin": "0.5.2", "hostPid": os.Getpid()})
+	waitFor(t, "adopted", a.Managed)
+
+	p2 := connect(t, url)
+	if p2.ok["managed"] != true {
+		t.Fatalf("hello-ok %v, want managed: true", p2.ok)
+	}
+	p2.send(map[string]any{"type": "quit"})
+	select {
+	case <-quit:
+	case <-time.After(5 * time.Second):
+		t.Fatal("adopted Pointy ignored quit")
+	}
+}
+
+func TestAdoptStartsOrphanCheck(t *testing.T) {
+	defer func(o, q time.Duration) { orphanPoll, quitGrace = o, q }(orphanPoll, quitGrace)
+	orphanPoll = 10 * time.Millisecond
+	quitGrace = time.Minute // only the orphan check may quit
+
+	quit := make(chan struct{}, 1)
+	a := New(Deps{}, HostOptions{Quit: func() { quit <- struct{}{} }})
+	t.Cleanup(a.host.stop)
+	p := connect(t, serve(t, a))
+	p.send(map[string]any{"type": "ready", "plugin": "0.5.2", "hostPid": deadPID(t)})
+	waitFor(t, "adopted", a.Managed)
+	p.ws.Close(websocket.StatusNormalClosure, "")
+	select {
+	case <-quit:
+	case <-time.After(5 * time.Second):
+		t.Fatal("adopted Pointy outlived its host")
 	}
 }

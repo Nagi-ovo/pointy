@@ -80,6 +80,9 @@ func (a *DSH) Connected() bool {
 	return a.plugin != nil
 }
 
+// Managed reports whether DSH owns Pointy's lifetime.
+func (a *DSH) Managed() bool { return a.host.isManaged() }
+
 // Attach takes over an authenticated plugin connection, closing the one
 // before it.
 func (a *DSH) Attach(c *server.Conn) server.Handler {
@@ -124,6 +127,7 @@ type pluginMessage struct {
 	Title     string `json:"title"`
 	Reason    string `json:"reason"`
 	Plugin    string `json:"plugin"`
+	HostPID   int    `json:"hostPid"`
 	Kind      any    `json:"kind"`
 	Origin    any    `json:"origin"`
 }
@@ -139,6 +143,7 @@ func (a *DSH) onPluginMessage(m server.Message) {
 	}
 	switch msg.Type {
 	case "ready":
+		a.host.adopt(msg.HostPID)
 		a.mu.Lock()
 		a.version = msg.Plugin
 		a.mu.Unlock()
@@ -172,7 +177,7 @@ func (a *DSH) onPluginMessage(m server.Message) {
 		a.mu.Unlock()
 		a.changed()
 	case "quit":
-		if a.host.opts.Managed {
+		if a.host.isManaged() {
 			a.log("quit", "plugin requested quit")
 			a.host.opts.Quit()
 		}

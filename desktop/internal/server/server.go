@@ -90,7 +90,7 @@ type Routes struct {
 	// Version and Managed are reported in hello-ok so the plugin knows
 	// whether to replace this Pointy.
 	Version string
-	Managed bool
+	Managed func() bool
 	// Plugin takes an authenticated plugin.
 	Plugin func(*Conn) Handler
 	// Extension checks an extension's hello against the challenge nonce it
@@ -178,6 +178,7 @@ func (r Routes) serve(c *Conn) {
 			c.Close()
 		default:
 			kick.Stop()
+			managed := r.Managed != nil && r.Managed()
 			reply := struct {
 				Type    string `json:"type"`
 				Proof   string `json:"proof"`
@@ -189,7 +190,7 @@ func (r Routes) serve(c *Conn) {
 				Proof:   Sign(r.Token, "pet|"+hello.Nonce),
 				Runtime: "go",
 				Version: r.Version,
-				Managed: r.Managed,
+				Managed: managed,
 			}
 			if err := c.Send(reply); err != nil && r.OnError != nil {
 				r.OnError("server", err)

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { cleanOldApps, MAX_REPLACE_ATTEMPTS, peerAction, READY_MARKER, stageWindowsApp } from '../plugin/src/runtime.ts'
+import { cleanOldApps, MAX_REPLACE_ATTEMPTS, peerAction, READY_MARKER, readyMessage, stageWindowsApp } from '../plugin/src/runtime.ts'
 
 function writeTree(root: string, files: Record<string, string>) {
   for (const [rel, content] of Object.entries(files)) {
@@ -110,4 +110,10 @@ test('peerAction decides when and how to replace an existing Go Pointy', () => {
   assert.equal(peerAction({ version: '0.5.1', managed: true }, '0.5.2', MAX_REPLACE_ATTEMPTS), 'give-up')
   assert.equal(peerAction({}, '0.5.2', MAX_REPLACE_ATTEMPTS), 'give-up')
   assert.equal(peerAction({ version: '0.5.2', managed: true }, '0.5.2', MAX_REPLACE_ATTEMPTS), 'use')
+})
+
+test('readyMessage sends hostPid only to an unmanaged Pointy this plugin started', () => {
+  assert.deepEqual(readyMessage('0.5.2', { managed: false }, true, 4321), { type: 'ready', plugin: '0.5.2', hostPid: 4321 })
+  assert.deepEqual(readyMessage('0.5.2', { managed: true }, true, 4321), { type: 'ready', plugin: '0.5.2' })
+  assert.deepEqual(readyMessage('0.5.2', { managed: false }, false, 4321), { type: 'ready', plugin: '0.5.2' })
 })
